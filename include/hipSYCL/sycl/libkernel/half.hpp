@@ -25,13 +25,21 @@
 namespace hipsycl {
 namespace sycl {
 
-class half;
-
 namespace detail {
-  constexpr half create_half(fp16::half_storage h);
-  constexpr fp16::half_storage get_half_storage(half h);
-}
 
+namespace half_impl {
+  class half;
+} // half_impl
+
+// We need this inline namespace so we can specify the friend function
+// and also so it gets visible in detail.
+inline namespace half_functions {
+  constexpr half_impl::half create_half(fp16::half_storage h);
+  constexpr fp16::half_storage get_half_storage(half_impl::half h);
+} // half_functions
+
+
+namespace half_impl {
 class half {
 private:
   friend constexpr half detail::create_half(fp16::half_storage h);
@@ -207,20 +215,23 @@ public:
 private:
   fp16::half_storage _data;
 };
+} // half_impl
 
-namespace detail {
-  constexpr half create_half(fp16::half_storage h) {
-    half v;
-    v._data = h;
-    return v;
-  }
-  constexpr fp16::half_storage get_half_storage(half h) {
-    return h._data;
-  }
+inline namespace half_functions {
+constexpr half_impl::half create_half(fp16::half_storage h) {
+  half_impl::half v;
+  v._data = h;
+  return v;
 }
+constexpr fp16::half_storage get_half_storage(half_impl::half h) {
+  return h._data;
+}
+} // half_functions
 
-}
-}
+} // detail
+using half = detail::half_impl::half;
+} // sycl
+} // hipsycl
 
 namespace std {
   template<> class numeric_limits<hipsycl::sycl::half>{
@@ -285,6 +296,6 @@ namespace std {
       return hash<hipsycl::fp16::half_storage>{}(data);
     }
   };
-}
+} // std
 
 #endif
