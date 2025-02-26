@@ -131,7 +131,7 @@ public:
   }
 
     // operator +,-,*,/ for combinations of half and other types
-#define OP_FOR_TYPE(op, type)                                         \
+#define ACPP_HALF_OP_FOR_TYPE(op, type)                               \
   friend half operator op(const half lhs, const type rhs) {           \
     return lhs op half(rhs);                                          \
   }                                                                   \
@@ -140,23 +140,23 @@ public:
     return half(lhs) op rhs;                                          \
   }
 
-#define OP(op)                                                        \
-  OP_FOR_TYPE(op, int)                                                \
-  OP_FOR_TYPE(op, unsigned int)                                       \
-  OP_FOR_TYPE(op, long)                                               \
-  OP_FOR_TYPE(op, long long)                                          \
-  OP_FOR_TYPE(op, unsigned long)                                      \
-  OP_FOR_TYPE(op, unsigned long long)                                 \
-  OP_FOR_TYPE(op, float)                                              \
-  OP_FOR_TYPE(op, double)
+#define ACPP_HALF_OP(op)                                              \
+  ACPP_HALF_OP_FOR_TYPE(op, int)                                      \
+  ACPP_HALF_OP_FOR_TYPE(op, unsigned int)                             \
+  ACPP_HALF_OP_FOR_TYPE(op, long)                                     \
+  ACPP_HALF_OP_FOR_TYPE(op, long long)                                \
+  ACPP_HALF_OP_FOR_TYPE(op, unsigned long)                            \
+  ACPP_HALF_OP_FOR_TYPE(op, unsigned long long)                       \
+  ACPP_HALF_OP_FOR_TYPE(op, float)                                    \
+  ACPP_HALF_OP_FOR_TYPE(op, double)
 
-  OP(+)
-  OP(-)
-  OP(*)
-  OP(/)
+  ACPP_HALF_OP(+)
+  ACPP_HALF_OP(-)
+  ACPP_HALF_OP(*)
+  ACPP_HALF_OP(/)
 
-#undef OP
-#undef OP_FOR_TYPE
+#undef ACPP_HALF_OP
+#undef ACPP_HALF_OP_FOR_TYPE
 
   friend bool operator==(const half& a, const half& b) noexcept {
     return a._data == b._data;
@@ -236,7 +236,7 @@ public:
       return fp16::builtin_greater_than_equal(a._data, b._data))
   }
 
-#define OP_FOR_TYPE(op, type)                                         \
+#define ACPP_HALF_OP_FOR_TYPE(op, type)                               \
   friend bool operator op(const half& a, const type& b) {             \
     return static_cast<float>(a) op b;                                \
   }                                                                   \
@@ -245,25 +245,25 @@ public:
     return a op static_cast<float>(b);                                \
   }
   
-#define OP(op)                                                        \
-  OP_FOR_TYPE(op, int)                                                \
-  OP_FOR_TYPE(op, unsigned int)                                       \
-  OP_FOR_TYPE(op, long)                                               \
-  OP_FOR_TYPE(op, long long)                                          \
-  OP_FOR_TYPE(op, unsigned long)                                      \
-  OP_FOR_TYPE(op, unsigned long long)                                 \
-  OP_FOR_TYPE(op, float)                                              \
-  OP_FOR_TYPE(op, double)
+#define ACPP_HALF_OP(op)                                              \
+  ACPP_HALF_OP_FOR_TYPE(op, int)                                      \
+  ACPP_HALF_OP_FOR_TYPE(op, unsigned int)                             \
+  ACPP_HALF_OP_FOR_TYPE(op, long)                                     \
+  ACPP_HALF_OP_FOR_TYPE(op, long long)                                \
+  ACPP_HALF_OP_FOR_TYPE(op, unsigned long)                            \
+  ACPP_HALF_OP_FOR_TYPE(op, unsigned long long)                       \
+  ACPP_HALF_OP_FOR_TYPE(op, float)                                    \
+  ACPP_HALF_OP_FOR_TYPE(op, double)
 
-  OP(<)
-  OP(<=)
-  OP(>)
-  OP(>=)
-  OP(==)
-  OP(!=)
+  ACPP_HALF_OP(<)
+  ACPP_HALF_OP(<=)
+  ACPP_HALF_OP(>)
+  ACPP_HALF_OP(>=)
+  ACPP_HALF_OP(==)
+  ACPP_HALF_OP(!=)
 
-#undef OP
-#undef OP_FOR_TYPE
+#undef ACPP_HALF_OP
+#undef ACPP_HALF_OP_FOR_TYPE
 
 private:
   fp16::half_storage _data;
