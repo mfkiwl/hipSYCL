@@ -235,6 +235,36 @@ public:
       return __hge(fp16::as_cuda_half(a._data), fp16::as_cuda_half(b._data)),
       return fp16::builtin_greater_than_equal(a._data, b._data))
   }
+
+#define OP_FOR_TYPE(op, type)                                         \
+  friend bool operator op(const half& a, const type& b) {             \
+    return static_cast<float>(a) op b;                                \
+  }                                                                   \
+                                                                      \
+  friend bool operator op(const type& a, const half& b) {             \
+    return a op static_cast<float>(b);                                \
+  }
+  
+#define OP(op)                                                        \
+  OP_FOR_TYPE(op, int)                                                \
+  OP_FOR_TYPE(op, unsigned int)                                       \
+  OP_FOR_TYPE(op, long)                                               \
+  OP_FOR_TYPE(op, long long)                                          \
+  OP_FOR_TYPE(op, unsigned long)                                      \
+  OP_FOR_TYPE(op, unsigned long long)                                 \
+  OP_FOR_TYPE(op, float)                                              \
+  OP_FOR_TYPE(op, double)
+
+  OP(<)
+  OP(<=)
+  OP(>)
+  OP(>=)
+  OP(==)
+  OP(!=)
+
+#undef OP
+#undef OP_FOR_TYPE
+
 private:
   fp16::half_storage _data;
 };
