@@ -166,6 +166,28 @@ public:
     return a._data != b._data;
   }
 
+  friend half& operator++(half& a) noexcept {
+    a += 1.f;
+    return a;
+  }
+
+  friend half operator++(half& a, int) noexcept {
+    half old = a;
+    a += 1.f;
+    return a;
+  }
+
+  friend half& operator--(half& a) noexcept {
+    a -= 1.f;
+    return a;
+  }
+
+  friend half operator--(half& a, int) noexcept {
+    half old = a;
+    a -= 1.f;
+    return a;
+  }
+
   // Operator is +/- unary
   friend half operator+(const half& a) noexcept {
     return a;
