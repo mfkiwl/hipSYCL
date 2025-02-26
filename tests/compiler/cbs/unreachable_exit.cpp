@@ -7,7 +7,7 @@
 // RUN: %acpp %s -o %t --acpp-targets=generic -O
 // RUN: ACPP_VISIBILITY_MASK=omp; %t | FileCheck %s
 
-#include <array>
+#include "hipSYCL/sycl/libkernel/group_functions.hpp"
 #include <iostream>
 
 #include <CL/sycl.hpp>
@@ -34,35 +34,24 @@ int main()
 
       cgh.parallel_for<class dynamic_local_memory_reduction>(
         cl::sycl::nd_range<1>{global_size, local_size},
-        [=](cl::sycl::nd_item<1> item) noexcept {
-          const auto lid = item.get_local_id(0);
+          [=](cl::sycl::nd_item<1> item) noexcept {
+            const auto lid = item.get_local_id(0);
+            const auto group_size = item.get_local_range(0);
 
-          scratch[lid] = acc[item.get_global_id()];
-          auto tmp = scratch[lid];
-          for(size_t i = local_size / 2; i > 0; i /= 2)
-          {
-            item.barrier();
-            if(lid < i)
-              tmp += scratch[lid + i];
-            scratch[lid] = tmp;
-          }
-
-          if(lid <= 1)
-            acc[item.get_global_id()] = tmp;
-        });
+            cl::sycl::group_barrier(item.get_group());
+            if (lid < group_size)
+              acc[item.get_global_id()] = global_size - item.get_global_id();
+            else
+              __builtin_unreachable();
+          });
     });
   }
   for(size_t i = 0; i < global_size / local_size; ++i)
   {
-    // CHECK: 16384
-    // CHECK: 32640
-    // CHECK: 49152
-    // CHECK: 98176
-    // CHECK: 81920
-    // CHECK: 163712
-    // CHECK: 114688
-    // CHECK: 229248
-    std::cout << host_buf[i * local_size + 1] << "\n";
+    // CHECK: 1024
+    // CHECK: 768
+    // CHECK: 512
+    // CHECK: 256
     std::cout << host_buf[i * local_size] << "\n";
   }
 }

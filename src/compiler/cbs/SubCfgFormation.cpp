@@ -1298,18 +1298,23 @@ void formSubCfgs(llvm::Function &F, llvm::LoopInfo &LI, llvm::DominatorTree &DT,
     Cfg.arrayifyMultiSubCfgValues(InstAllocaMap, BaseInstAllocaMap, InstContReplicaMap, SubCFGs,
                                   F.getEntryBlock().getTerminator(), ReqdArrayElements, VecInfo);
 
+  llvm::BasicBlock *NewExit =
+      llvm::BasicBlock::Create(F.getContext(), "cbs.exit", &F);
+  llvm::IRBuilder<> ExitBuilder(NewExit);
+  ExitBuilder.CreateRetVoid();
+
   llvm::DenseMap<llvm::Instruction *, llvm::AllocaInst *> RemappedInstAllocaMap;
   for (auto &Cfg : SubCFGs) {
     Cfg.print();
     Cfg.replicate(F, InstAllocaMap, BaseInstAllocaMap, InstContReplicaMap, RemappedInstAllocaMap,
-                  *ExitingBlocks.begin(), LocalSize, IsSscp);
+                  NewExit, LocalSize, IsSscp);
     purgeLifetime(Cfg);
   }
 
   llvm::BasicBlock *WhileHeader = nullptr;
   WhileHeader =
       generateWhileSwitchAround(&F.getEntryBlock(), F.getEntryBlock().getSingleSuccessor(),
-                                *ExitingBlocks.begin(), LastBarrierIdStorage, SubCFGs);
+                                NewExit, LastBarrierIdStorage, SubCFGs);
 
   llvm::removeUnreachableBlocks(F);
 

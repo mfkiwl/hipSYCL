@@ -403,8 +403,8 @@ using ulonglong16 = vec<unsigned long long, 16>;
   }
 
 #define HIPSYCL_BUILTIN_GENERATOR_BINARY_T_TGENPTR(T, name, impl_name)         \
-  template <access::address_space A>                                           \
-  HIPSYCL_BUILTIN T name(T a, const multi_ptr<T, A> &b) noexcept {             \
+  template <access::address_space A, access::decorated D>                      \
+  HIPSYCL_BUILTIN T name(T a, const multi_ptr<T, A, D> &b) noexcept {          \
     if constexpr (std::is_arithmetic_v<T>) {                                   \
       return impl_name(detail::data_element(a, 0), b.get());                   \
     } else {                                                                   \
@@ -454,10 +454,10 @@ using ulonglong16 = vec<unsigned long long, 16>;
   }
 
 #define HIPSYCL_BUILTIN_GENERATOR_BINARY_T_GENINTPTR(T, name, impl_name)       \
-  template <class IntType, access::address_space A,                            \
+  template <class IntType, access::address_space A, access::decorated D,       \
             std::enable_if_t<detail::is_genint_alternative_type_v<T, IntType>, \
                              int> = 0>                                         \
-  HIPSYCL_BUILTIN T name(T a, const multi_ptr<IntType, A> &b) noexcept {       \
+  HIPSYCL_BUILTIN T name(T a, const multi_ptr<IntType, A, D> &b) noexcept {    \
     if constexpr (std::is_arithmetic_v<T>) {                                   \
       return impl_name(detail::data_element(a, 0), b.get());                   \
     } else {                                                                   \
@@ -792,11 +792,12 @@ HIPSYCL_BUILTIN VecType clamp(const VecType &a, ScalarType minval,
                VecType{static_cast<element_type>(maxval)});
 }
 
+HIPSYCL_DEFINE_BUILTIN(ctz, HIPSYCL_BUILTIN_OVERLOAD_SET_GENINTEGER,
+                       HIPSYCL_BUILTIN_GENERATOR_UNARY_T)
+
 HIPSYCL_DEFINE_BUILTIN(clz, HIPSYCL_BUILTIN_OVERLOAD_SET_GENINTEGER,
                        HIPSYCL_BUILTIN_GENERATOR_UNARY_T)
 
-// TODO clz
-// TODO ctz
 // TODO mad_hi
 // TODO mad_sat
 

@@ -93,6 +93,7 @@ endif()
 set(COMPILER_LIBRARY_SOURCES
   AdaptiveCppLlvmPasses.cpp
   GlobalsPruningPass.cpp
+  SMCPCompatPass.cpp
   ${SSCP_COMPILER}
   ${STDPAR_COMPILER}
   ${REFLECTION_BUILTINS}
