@@ -167,14 +167,15 @@ public:
   }
 
   // Operator is +/- unary
-  friend half& operator+(half& a) noexcept {
+  friend half operator+(const half& a) noexcept {
     return a;
   }
 
-  friend half& operator-(half& a) noexcept {
+  friend half operator-(const half& a) noexcept {
     constexpr __acpp_uint16 sign_mask = 0x8000;
-    a._data ^= sign_mask;
-    return a; 
+    half ret{a};
+    ret._data ^= sign_mask;
+    return ret;
   }
 
   ACPP_UNIVERSAL_TARGET
