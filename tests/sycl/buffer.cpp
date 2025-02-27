@@ -383,7 +383,7 @@ BOOST_AUTO_TEST_CASE(buffer_shared_ptr) {
     std::unique_ptr<int, std::default_delete<int[]>> hostptr{
         new int[size], std::default_delete<int[]>{}};
 
-    s::buffer<int> buf{std::move(hostptr), size};
+    s::buffer<int> buf{std::shared_ptr<int>{std::move(hostptr)}, size};
 
     BOOST_CHECK(!hostptr);
 
