@@ -383,7 +383,26 @@ BOOST_AUTO_TEST_CASE(buffer_shared_ptr) {
     std::unique_ptr<int, std::default_delete<int[]>> hostptr{
         new int[size], std::default_delete<int[]>{}};
 
-    s::buffer<int> buf{std::shared_ptr<int>{std::move(hostptr)}, size};
+    s::buffer<int> buf{std::move(hostptr), size};
+
+    BOOST_CHECK(!hostptr);
+
+    q.submit([&](auto &cgh) {
+      auto acc = buf.get_access<s::access::mode::write>(cgh);
+      cgh.parallel_for(size, [=](auto idx) { acc[idx] = testVal; });
+    });
+
+    auto ha = buf.get_host_access();
+    for (auto val : ha)
+      BOOST_CHECK(val == testVal);
+  }
+
+  // Constructor that takes a unique ptr of array
+  {
+    std::unique_ptr<int[], std::default_delete<int[]>> hostptr{
+        new int[size], std::default_delete<int[]>{}};
+
+    s::buffer<int> buf{std::move(hostptr), size};
 
     BOOST_CHECK(!hostptr);
 
