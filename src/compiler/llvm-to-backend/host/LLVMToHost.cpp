@@ -163,8 +163,8 @@ bool LLVMToHostTranslator::translateToBackendFormat(llvm::Module &FlavoredModule
   }
 
   const std::string ClangPath = getClangPath();
-  const std::string CpuFlag = HIPSYCL_HOST_CPU_FLAG;
-
+  const std::string CpuFlag = ACPP_HOST_CPU_FLAG;
+  
   llvm::SmallVector<llvm::StringRef, 16> Invocation{ClangPath,
                                                     "-O3",
                                                     CpuFlag,
@@ -177,15 +177,19 @@ bool LLVMToHostTranslator::translateToBackendFormat(llvm::Module &FlavoredModule
                                                     #endif
                                                     "-o",
                                                     OutputFileName,
-                                                    InputFileName
+                                                    InputFileName,
                                                     };
+  const llvm::StringRef AdditionalFlags = ACPP_ADDITIONAL_CPU_FLAGS;
+  AdditionalFlags.split(Invocation, ' ');
 
-  std::string ArgString;
-  for (const auto &S : Invocation) {
-    ArgString += S;
-    ArgString += " ";
+  {
+    std::string ArgString;
+    for (const auto &S : Invocation) {
+      ArgString += S;
+      ArgString += " ";
+    }
+    HIPSYCL_DEBUG_INFO << "LLVMToHost: Invoking " << ArgString << "\n";
   }
-  HIPSYCL_DEBUG_INFO << "LLVMToHost: Invoking " << ArgString << "\n";
 
   int R = llvm::sys::ExecuteAndWait(ClangPath, Invocation);
 

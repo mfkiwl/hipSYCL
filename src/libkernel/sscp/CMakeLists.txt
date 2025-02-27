@@ -21,6 +21,13 @@ function(libkernel_generate_bitcode_library)
   endif()
   if(WIN32)
     set(platform_specific -DWIN32_LEAN_AND_MEAN -DNOMINMAX -D_USE_MATH_DEFINES)
+  elseif(APPLE)
+    # make overriding easier
+    if(CMAKE_SYSROOT)
+      set(platform_specific -isysroot ${CMAKE_SYSROOT})
+    else()
+      set(platform_specific -isysroot ${CMAKE_OSX_SYSROOT})
+    endif()
   endif()
 
   add_custom_command(

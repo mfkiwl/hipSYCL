@@ -88,7 +88,7 @@ else()
 
   # ensure actual output and expected are equivalent
   set_target_properties(acpp-rt PROPERTIES LIBRARY_OUTPUT_NAME ${HIPSYCL_RT_LIBRARY_OUTPUT_NAME})
-  if(APPLE)
+  if(NOT APPLE)
     set(HIPSYCL_RT_LIBRARY_OUTPUT_NAME "lib${HIPSYCL_RT_LIBRARY_OUTPUT_NAME}.so" PARENT_SCOPE)
   else()
     set(HIPSYCL_RT_LIBRARY_OUTPUT_NAME "lib${HIPSYCL_RT_LIBRARY_OUTPUT_NAME}.dylib" PARENT_SCOPE)
@@ -313,18 +313,16 @@ if(WITH_CPU_BACKEND)
     get_target_property(OMP_INCLUDE_DIR omp BINARY_DIR)
   else()
     # OMP_ROOT and/or OpenMP_ROOT is not defined by default on Mac
-    if (APPLE)
-      if (NOT DEFINED OpenMP_ROOT AND NOT DEFINED OMP_ROOT)
-        execute_process(COMMAND brew list libomp
-        COMMAND grep libomp.a 
-        COMMAND sed -E "s/\\/lib\\/.*//"
-        OUTPUT_VARIABLE DefaultOMP_ROOT
-        OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if (APPLE AND NOT DEFINED OpenMP_ROOT AND NOT DEFINED OMP_ROOT)
+      execute_process(COMMAND brew list libomp
+      COMMAND grep libomp.a 
+      COMMAND sed -E "s/\\/lib\\/.*//"
+      OUTPUT_VARIABLE DefaultOMP_ROOT
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-        # fater linkage will error out if it is not found
-        set(OpenMP_ROOT ${DefaultOMP_ROOT})
-        set(OMP_ROOT ${DefaultOMP_ROOT})
-      endif()
+      # fater linkage will error out if it is not found
+      set(OpenMP_ROOT ${DefaultOMP_ROOT})
+      set(OMP_ROOT ${DefaultOMP_ROOT})
     endif()
 
     find_package(OpenMP REQUIRED)

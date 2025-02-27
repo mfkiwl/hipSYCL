@@ -257,13 +257,22 @@ if(WITH_SSCP_COMPILER)
       message(WARNING "Could not find -mcpu=native or -march=native. Host code generation may be suboptimal.")
     endif()
 
+    if(APPLE)
+      if(CMAKE_SYSROOT)
+        set(HOST_ADDITIONAL_FLAGS "-isysroot ${CMAKE_SYSROOT}")
+      else()
+        set(HOST_ADDITIONAL_FLAGS "-isysroot ${CMAKE_OSX_SYSROOT}")
+      endif()
+    endif()
+
     add_hipsycl_llvm_backend(
       BACKEND host
       LIBRARY host/LLVMToHost.cpp host/HostKernelWrapperPass.cpp
       TOOL host/LLVMToHostTool.cpp)
 
     target_compile_definitions(llvm-to-host PRIVATE
-      -DHIPSYCL_HOST_CPU_FLAG="${HOST_CPU_FLAG}")
+    -DACPP_HOST_CPU_FLAG="${HOST_CPU_FLAG}"
+    -DACPP_ADDITIONAL_CPU_FLAGS="${HOST_ADDITIONAL_FLAGS}")
     target_link_libraries(llvm-to-host PRIVATE acpp-clang-cbs)
   endif()
 
