@@ -437,7 +437,11 @@ else()
 endif()
 
 if(APPLE)
-  set(DEFAULT_OMP_FLAG "-Xclang -fopenmp")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+    set(DEFAULT_OMP_FLAG "-Xclang -fopenmp")
+  else()
+    set(DEFAULT_OMP_FLAG "-fopenmp")
+  endif()
 
   if(Boost_FIBER_LIBRARY_DEBUG)
     set(DEFAULT_BOOST_LIBRARIES "${Boost_CONTEXT_LIBRARY_DEBUG} ${Boost_FIBER_LIBRARY_DEBUG} -Wl,-rpath ${Boost_LIBRARY_DIR}")
