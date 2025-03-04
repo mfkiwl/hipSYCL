@@ -1240,13 +1240,16 @@ void formSubCfgs(llvm::Function &F, llvm::LoopInfo &LI, llvm::DominatorTree &DT,
   HIPSYCL_DEBUG_INFO << "[SubCFG] Kernel is " << Dim << "-dimensional\n";
 
   const auto LocalSize = getLocalSizeValues(F, Dim, IsSscp);
-
   auto *Entry = &F.getEntryBlock();
+  for(auto LocalSizeV : LocalSize) {
+    if(auto I = llvm::dyn_cast<llvm::Instruction>(LocalSizeV))
+      I->moveBefore(Entry->getTerminator());
+  }
 
   llvm::IRBuilder Builder{Entry->getTerminator()};
   llvm::Value *ReqdArrayElements = LocalSize[0];
   for (size_t D = 1; D < LocalSize.size(); ++D)
-    ReqdArrayElements = Builder.CreateMul(ReqdArrayElements, LocalSize[D]);
+    ReqdArrayElements = Builder.CreateMul(ReqdArrayElements, LocalSize[D], "local_size_linearized");
 
   std::vector<llvm::BasicBlock *> Blocks;
   Blocks.reserve(std::distance(F.begin(), F.end()));
