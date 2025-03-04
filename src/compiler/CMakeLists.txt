@@ -113,6 +113,7 @@ else()
     ${LLVM_MAIN_SRC_DIR}/../clang/include
     ${LLVM_BINARY_DIR}/tools/clang/include
   )
+  add_dependencies(obj.acpp-frontend clang-tablegen-targets)
 
   if(${CLANG_LINK_CLANG_DYLIB})
     set_property(
