@@ -65,7 +65,7 @@ visibility_mask_t::mapped_type parse_device_visibility_mask(const std::string& s
       } else if(components[0] != "*") {
         current.platform_name_match = components[0]; 
       }
-      
+
       if(is_number(components[1])) {
         current.device_index_equality = std::stoi(components[1]);
       } else if(components[1] != "*") {
@@ -74,7 +74,7 @@ visibility_mask_t::mapped_type parse_device_visibility_mask(const std::string& s
     }
     device_visibility_conditions.push_back(current);
   }
-  
+
   return device_visibility_conditions;
 }
 
@@ -84,7 +84,7 @@ bool device_matches(const visibility_mask_t::mapped_type &conditions,
                     const std::string &platform_name) {
   if(conditions.empty())
     return true;
-  
+
   // The logic is: All individual device visibility conditions are connected by or,
   // but the conditions within each condition are connected by and.
   for(const auto& c : conditions) {
@@ -135,14 +135,14 @@ bool has_device_visibility_mask(const visibility_mask_t& mask, backend_id backen
 std::istream &operator>>(std::istream &istr, visibility_mask_t &out) {
   std::string str;
   istr >> str;
-  // have to copy, as otherweise might be interpreted as failing, although everything is fine.
+  // have to copy, as otherwise might be interpreted as failing, although everything is fine.
   std::istringstream istream{str};
 
   std::string backend_specific_substring;
   while(std::getline(istream, backend_specific_substring, ';')) {
     if(backend_specific_substring.empty())
       continue;
-    
+
     std::size_t delimiter = backend_specific_substring.find(':');
     std::string name;
     if(delimiter != std::string::npos) {
