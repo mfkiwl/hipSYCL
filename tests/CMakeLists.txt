@@ -181,6 +181,7 @@ if(WITH_PCUDA_TESTS)
     pcuda/memory.cpp
     pcuda/stream.cpp
     pcuda/event.cpp
+    pcuda/atomic.cpp
   )
 
   target_compile_options(pcuda_tests PRIVATE --acpp-pcuda)

@@ -235,6 +235,17 @@ Supported features in device code include:
 |`__syncwarp` | |
 | Math functions from `<math.h>`/`<cmath>` | |
 | CUDA/HIP vector types | |
+|`atomicAdd[_system|_block]` | `int`, `uint`, `ull`, `float`, `double` types |
+|`atomicSub[_system|_block]` | `int`, `uint` types |
+|`atomicExch[_system|_block]` | `int`, `uint`, `ull`, `float` types |
+|`atomicMin[_system|_block]` | `int`, `uint`, `ll`, `ull` types |
+|`atomicMax[_system|_block]` | `int`, `uint`, `ll`, `ull` types |
+|`atomicAnd[_system|_block]` | `int`, `uint`, `ull` types |
+|`atomicOr[_system|_block]` | `int`, `uint`, `ull` types |
+|`atomicXor[_system|_block]` | `int`, `uint`, `ull` types |
+|`atomicCAS[_system|_block]` | `ushort`, `int`, `uint`, `ull` types |
+|`atomicInc[_system|_block]` | `uint` type |
+|`atomicDec[_system|_block]` | `uint` type |
 
 ## Supported runtime APIs
 

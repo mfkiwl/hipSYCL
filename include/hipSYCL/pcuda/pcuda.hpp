@@ -19,10 +19,13 @@
 #include "hipSYCL/sycl/libkernel/sscp/builtins/core.hpp"
 #include "hipSYCL/sycl/libkernel/sscp/builtins/subgroup.hpp"
 #include "hipSYCL/sycl/libkernel/sscp/builtins/barrier.hpp"
+
 #include <cstddef>
 
+#include "detail/builtin_call.hpp"
 #include "detail/vec.hpp"
 #include "detail/math.hpp"
+#include "detail/atomic.hpp"
 #include "pcuda_runtime.hpp"
 
 #ifndef __device__
@@ -46,9 +49,6 @@
   __attribute__((annotate("acpp_local_memory")))                               \
   __attribute__((abi_tag("__acpp_local_memory_tag__")))
 
-#define PCUDA_BUILTIN_CALL(builtin) if(__acpp_sscp_is_device){builtin;}
-#define PCUDA_BUILTIN_CALL_RESULT(builtin, fallback)                           \
-  (__acpp_sscp_is_device ? (builtin) : (fallback))
 
 // needs -fdeclspec
 struct __pcudaThreadIdx {
