@@ -90,22 +90,29 @@ using min_test_types =
 
 template<class T>
 void test_atomic_min() {
+  // atomicMin/Max on ROCm seem to be bugged when managed memory is used.
+  // Use device memory isntead.
   T* data;
   const size_t problem_size = 16;
   const T offset = T(1024*1024);
-  BOOST_CHECK(pcudaMallocManaged(&data, (problem_size + 1) * sizeof(T)) ==
+  BOOST_CHECK(pcudaMalloc(&data, (problem_size + 1) * sizeof(T)) ==
               pcudaSuccess);
+  std::vector<T> input(problem_size+1);
   for(int i = 0; i < problem_size+1; ++i)
-    data[i] = T(i);
-  data[0] = offset;
+    input[i] = T(i);
+  input[0] = offset;
+  BOOST_CHECK(pcudaMemcpy(data, input.data(), input.size() * sizeof(T),
+                          pcudaMemcpyDefault) == pcudaSuccess);
 
   pcudaParallelFor(1, problem_size, [=](){
     int gid = threadIdx.x;
     atomicMin(data, data[gid+1]);
   });
   BOOST_CHECK(pcudaDeviceSynchronize() == pcudaSuccess);
-std::cout << *data << std::endl;
-  BOOST_CHECK(*data == 1);
+  BOOST_CHECK(pcudaMemcpy(input.data(), data, input.size() * sizeof(T),
+                          pcudaMemcpyDefault) == pcudaSuccess);
+
+  BOOST_CHECK(input[0] == 1);
 
   BOOST_CHECK(pcudaFree(data) == pcudaSuccess);
 }
@@ -120,21 +127,28 @@ using max_test_types =
 
 template<class T>
 void test_atomic_max() {
+  // atomicMin/Max on ROCm seem to be bugged when managed memory is used.
+  // Use device memory isntead.
   T* data;
   const size_t problem_size = 16;
   const T offset = T(2);
-  BOOST_CHECK(pcudaMallocManaged(&data, (problem_size + 1) * sizeof(T)) ==
+  BOOST_CHECK(pcudaMalloc(&data, (problem_size + 1) * sizeof(T)) ==
               pcudaSuccess);
+  std::vector<T> input(problem_size+1);
   for(int i = 0; i < problem_size+1; ++i)
-    data[i] = T(i);
-  data[0] = offset;
+    input[i] = T(i);
+  input[0] = offset;
+  BOOST_CHECK(pcudaMemcpy(data, input.data(), input.size() * sizeof(T),
+                          pcudaMemcpyDefault) == pcudaSuccess);
 
   pcudaParallelFor(1, problem_size, [=](){
     int gid = threadIdx.x;
     atomicMax(data, data[gid+1]);
   });
   BOOST_CHECK(pcudaDeviceSynchronize() == pcudaSuccess);
-  BOOST_CHECK(*data == problem_size);
+  BOOST_CHECK(pcudaMemcpy(input.data(), data, input.size() * sizeof(T),
+                          pcudaMemcpyDefault) == pcudaSuccess);
+  BOOST_CHECK(input[0] == problem_size);
 
   BOOST_CHECK(pcudaFree(data) == pcudaSuccess);
 }
