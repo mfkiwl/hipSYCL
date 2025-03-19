@@ -660,7 +660,35 @@ endif()
 # must stay after add_subdirectory(src) as HIPSYCL_COMMON_LIBRARY_OUTPUT_NAME is declared there
 configure_file(
   ${ACPP_SOURCE_ROOT}/include/hipSYCL/common/config.hpp.in
-  ${ACPP_BINARY_ROOT}/include/hipSYCL/common/config.hpp)
+  ${ACPP_BINARY_ROOT}/include/hipSYCL/common/config.hpp
+  )
+
+set(ACPP_PCUDA_PREFIX "cuda")
+set(ACPP_PCUDA_CAPITAL_PREFIX "CUDA")
+configure_file(
+  ${ACPP_SOURCE_ROOT}/include/hipSYCL/pcuda/detail/prefixed_runtime.hpp.in
+  ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/cuda_prefixed_runtime.hpp)
+
+set(ACPP_PCUDA_PREFIX "hip")
+set(ACPP_PCUDA_CAPTIAL_PREFIX "HIP")
+configure_file(
+  ${ACPP_SOURCE_ROOT}/include/hipSYCL/pcuda/detail/prefixed_runtime.hpp.in
+  ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/hip_prefixed_runtime.hpp)
+
+
+set(ACPP_PCUDA_PREFIX "cuda")
+set(ACPP_PCUDA_CAPITAL_PREFIX "CUDA")
+configure_file(
+  ${ACPP_SOURCE_ROOT}/include/hipSYCL/pcuda/detail/prefixed_runtime.hpp.in
+  ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/cuda_prefixed_runtime.hpp)
+
+set(ACPP_PCUDA_PREFIX "hip")
+set(ACPP_PCUDA_CAPTIAL_PREFIX "HIP")
+configure_file(
+  ${ACPP_SOURCE_ROOT}/include/hipSYCL/pcuda/detail/prefixed_runtime.hpp.in
+  ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/hip_prefixed_runtime.hpp)
+
+
 
 install(DIRECTORY include/CL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
 install(DIRECTORY include/SYCL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
@@ -668,7 +696,10 @@ install(DIRECTORY include/SYCL DESTINATION include/AdaptiveCpp/ FILES_MATCHING P
 install(DIRECTORY include/hipSYCL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.hpp")
 install(DIRECTORY include/hipSYCL DESTINATION include/AdaptiveCpp/ FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY include/hipSYCL/std DESTINATION include/AdaptiveCpp/hipSYCL/ )
+
 install(FILES ${ACPP_BINARY_ROOT}/include/hipSYCL/common/config.hpp DESTINATION include/AdaptiveCpp/hipSYCL/common/)
+install(FILES ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/cuda_prefixed_runtime.hpp DESTINATION include/AdaptiveCpp/hipSYCL/pcuda/detail/)
+install(FILES ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/hip_prefixed_runtime.hpp DESTINATION include/AdaptiveCpp/hipSYCL/pcuda/detail/)
 
 # This part of the installation process can be simplified once the source directory has been
 # renamed from hipSYCL to AdaptiveCpp.
@@ -676,6 +707,9 @@ install(DIRECTORY include/hipSYCL/ DESTINATION include/AdaptiveCpp/AdaptiveCpp F
 install(DIRECTORY include/hipSYCL/ DESTINATION include/AdaptiveCpp/AdaptiveCpp FILES_MATCHING PATTERN "*.h")
 install(DIRECTORY include/hipSYCL/std/ DESTINATION include/AdaptiveCpp/AdaptiveCpp/std )
 install(FILES ${ACPP_BINARY_ROOT}/include/hipSYCL/common/config.hpp DESTINATION include/AdaptiveCpp/AdaptiveCpp/common/)
+install(FILES ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/cuda_prefixed_runtime.hpp DESTINATION include/AdaptiveCpp/AdaptiveCpp/pcuda/detail/)
+install(FILES ${ACPP_BINARY_ROOT}/include/hipSYCL/pcuda/detail/hip_prefixed_runtime.hpp DESTINATION include/AdaptiveCpp/AdaptiveCpp/pcuda/detail/)
+
 
 if(NOT WIN32)
 # Windows is case-insensitive, so don't copy to sycl/sycl.hpp as
