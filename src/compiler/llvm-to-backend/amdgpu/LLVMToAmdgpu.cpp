@@ -92,7 +92,7 @@ bool getCommandOutput(const std::string &Program, const llvm::SmallVector<std::s
     return false;
   }
 
-  AtScopeExit DestroyOutputFile([&]() { auto Err = OutputFile->discard(); });
+  AtScopeExit DestroyOutputFile([&]() { consumeError(std::move(OutputFile->discard())); });
 
   llvm::SmallVector<llvm::StringRef> InvocationRef;
   for(const auto& S: Invocation)
@@ -132,7 +132,18 @@ public:
     
 
     llvm::SmallVector<std::string> Invocation;
+    // Newer ROCm versions don't handle --cuda-gpu-arch well,
+    // while older versions don't handle --offload-arch well.
+    // We do not have a good way to check the ROCm version
+    // in llvm-to-amdgpu currently, *but* we can exploit
+    // that the AdaptiveCpp LLVM version must be <= ROCm LLVM version.
+    // So, by checking for a minimum LLVM version, we also
+    // implicitly check for a minimum ROCm version.
+#if LLVM_VERSION_MAJOR >= 18
+    auto OffloadArchFlag = "--offload-arch="+TargetDevice;
+#else
     auto OffloadArchFlag = "--cuda-gpu-arch="+TargetDevice;
+#endif
     auto RocmPathFlag = "--rocm-path="+std::string{RocmPath};
     auto RocmDeviceLibsFlag = "--rocm-device-lib-path="+DeviceLibsPath;
 
@@ -423,24 +434,23 @@ bool LLVMToAmdgpuTranslator::clangJitLink(llvm::Module& FlavoredModule, std::str
   auto OutputFile = llvm::sys::fs::TempFile::create("acpp-sscp-amdgpu-%%%%%%.hipfb");
   auto DummyFile = llvm::sys::fs::TempFile::create("acpp-sscp-amdgpu-dummy-%%%%%%.cpp");
 
-  std::string OutputFilename = OutputFile->TmpName;
-
   auto checkFileError = [&](auto& F) {
     auto E = F.takeError();
     if(E){
-      this->registerError("LLVMToAmdgpu: Could not create temp file: "+InputFile->TmpName);
+      this->registerError("LLVMToAmdgpu: Could not create temp file: " + F->TmpName);
       return false;
     }
     return true;
   };
 
   if(!checkFileError(InputFile)) return false;
+  if(!checkFileError(OutputFile)) return false;
   if(!checkFileError(DummyFile)) return false;
 
-  AtScopeExit DestroyInputFile([&]() { auto Err = InputFile->discard(); });
-  AtScopeExit DestroyOutputFile([&]() { auto Err = OutputFile->discard(); });
-  AtScopeExit DestroyDummyFile([&]() { auto Err = DummyFile->discard(); });
-  
+  AtScopeExit DestroyInputFile([&]() { consumeError(std::move(InputFile->discard())); });
+  AtScopeExit DestroyOutputFile([&]() { consumeError(std::move(OutputFile->discard())); });
+  AtScopeExit DestroyDummyFile([&]() { consumeError(std::move(DummyFile->discard())); });
+
   llvm::raw_fd_ostream InputStream{InputFile->FD, false};
   llvm::raw_fd_ostream DummyStream{DummyFile->FD, false};
 
@@ -457,7 +467,7 @@ bool LLVMToAmdgpuTranslator::clangJitLink(llvm::Module& FlavoredModule, std::str
   llvm::SmallVector<std::string> Invocation = {
       ClangPath, "-x", "hip", "-O3", "-nogpuinc", OffloadArchFlag, "--cuda-device-only",
         "-Xclang", "-mlink-bitcode-file", "-Xclang", InputFile->TmpName,
-        "-o",  OutputFilename, DummyFile->TmpName
+        "-o",  OutputFile->TmpName, DummyFile->TmpName
   };
 
   llvm::SmallVector<llvm::StringRef> InvocationRef;

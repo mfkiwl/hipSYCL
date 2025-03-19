@@ -22,6 +22,7 @@
 #include "hipSYCL/compiler/llvm-to-backend/AddressSpaceMap.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/Utils.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/host/HostKernelWrapperPass.hpp"
+#include "hipSYCL/compiler/llvm-to-backend/host/StaticLocalMemoryPass.hpp"
 #include "hipSYCL/compiler/sscp/IRConstantReplacer.hpp"
 #include "hipSYCL/glue/llvm-sscp/jit-reflection/queries.hpp"
 
@@ -81,6 +82,12 @@ bool LLVMToHostTranslator::toBackendFlavor(llvm::Module &M, PassHandler &PH) {
     }
   }
 
+  // This pass needs to be run before builtins are linked,
+  // as it potentially generates additional builtin calls.
+  // So we cannot run it in the pipeline at the end of this function.
+  HostStaticLocalMemoryPass SLMPass{};
+  SLMPass.run(M, *PH.ModuleAnalysisManager);
+
   std::string BuiltinBitcodeFileName = "libkernel-sscp-host-full.bc";
   if(IsFastMath)
     BuiltinBitcodeFileName = "libkernel-sscp-host-fast-full.bc";
@@ -135,16 +142,8 @@ bool LLVMToHostTranslator::translateToBackendFormat(llvm::Module &FlavoredModule
     return false;
   }
 
-  std::string OutputFilename = OutputFile->TmpName;
-
-  AtScopeExit DestroyInputFile([&]() {
-    if (InputFile->discard())
-      ;
-  });
-  AtScopeExit DestroyOutputFile([&]() {
-    if (OutputFile->discard())
-      ;
-  });
+  AtScopeExit DestroyInputFile([&]() { consumeError(std::move(InputFile->discard())); });
+  AtScopeExit DestroyOutputFile([&]() { consumeError(std::move(OutputFile->discard())); });
 
   std::error_code EC;
   llvm::raw_fd_ostream InputStream{InputFile->FD, false};
@@ -164,7 +163,7 @@ bool LLVMToHostTranslator::translateToBackendFormat(llvm::Module &FlavoredModule
                                                     "-Wno-pass-failed",
                                                     "-fPIC",
                                                     "-o",
-                                                    OutputFilename,
+                                                    OutputFile->TmpName,
                                                     InputFile->TmpName};
 
   std::string ArgString;
