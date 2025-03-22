@@ -140,166 +140,139 @@ public:
     return compare_exchange_strong(expected, desired, order, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral fetch_add(Integral operand,
+private:
+  T* _ptr;
+};
+
+template <memory_order DefaultOrder, memory_scope DefaultScope,
+          access::address_space Space>
+class atomic_ref<int, DefaultOrder, DefaultScope, Space> {
+public:
+  int fetch_add(int operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_add<Space>(_ptr, operand, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral fetch_sub(Integral operand,
+  int fetch_sub(int operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_sub<Space>(_ptr, operand, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral fetch_and(Integral operand,
+  int fetch_and(int operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_and<Space>(_ptr, operand, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral fetch_or(Integral operand,
+  int fetch_or(int operand,
                     memory_order order = default_read_modify_write_order,
                     memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_or<Space>(_ptr, operand, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral fetch_xor(Integral operand,
+  int fetch_xor(int operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_xor<Space>(_ptr, operand, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral fetch_min(Integral operand,
+  int fetch_min(int operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_min<Space>(_ptr, operand, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral fetch_max(Integral operand,
+  int fetch_max(int operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_max<Space>(_ptr, operand, order, scope);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator++(int) const noexcept {
-    return fetch_add(Integral{1});
+  int operator++(int) const noexcept {
+    return fetch_add(int{1});
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator--(int) const noexcept {
-    return fetch_sub(Integral{1});
+  int operator--(int) const noexcept {
+    return fetch_sub(int{1});
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator++() const noexcept {
-    return fetch_add(Integral{1}) + 1;
+  int operator++() const noexcept {
+    return fetch_add(int{1}) + 1;
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator--() const noexcept {
-    return fetch_sub(Integral{1}) - 1;
+  int operator--() const noexcept {
+    return fetch_sub(int{1}) - 1;
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator+=(Integral op) const noexcept {
+  int operator+=(int op) const noexcept {
     return fetch_add(op);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator-=(Integral op) const noexcept {
+  int operator-=(int op) const noexcept {
     return fetch_sub(op);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator&=(Integral op) const noexcept {
+  int operator&=(int op) const noexcept {
     return fetch_and(op);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator|=(Integral op) const noexcept {
+  int operator|=(int op) const noexcept {
     return fetch_or(op);
   }
 
-  template <class Integral = T,
-            std::enable_if_t<std::is_integral_v<Integral>, int> = 0>
-  Integral operator^=(Integral op) const noexcept {
+  int operator^=(int op) const noexcept {
     return fetch_xor(op);
   }
 
-  template <class Floating = T,
-            std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
-  Floating fetch_add(Floating operand,
+private:
+  int* _ptr;
+};
+
+template <memory_order DefaultOrder, memory_scope DefaultScope,
+          access::address_space Space>
+class atomic_ref<float, DefaultOrder, DefaultScope, Space> {
+public:
+
+  float fetch_add(float operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_add<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  template <class Floating = T,
-            std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
-  Floating fetch_sub(Floating operand,
+  float fetch_sub(float operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_sub<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  template <class Floating = T,
-            std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
-  Floating fetch_min(Floating operand,
+  float fetch_min(float operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_min<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  template <class Floating = T,
-            std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
-  Floating fetch_max(Floating operand,
+  float fetch_max(float operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_max<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  template <class Floating = T,
-            std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
-  Floating operator+=(Floating op) const noexcept {
+  float operator+=(float op) const noexcept {
     return fetch_add(op);
   }
 
-  template <class Floating = T,
-            std::enable_if_t<std::is_floating_point_v<Floating>, int> = 0>
-  Floating operator-=(Floating op) const noexcept {
+  float operator-=(float op) const noexcept {
     return fetch_sub(op);
   }
 
 private:
-  T* _ptr;
+  float* _ptr;
 };
 
 template <typename T, memory_order DefaultOrder, memory_scope DefaultScope,
