@@ -148,6 +148,92 @@ template <memory_order DefaultOrder, memory_scope DefaultScope,
           access::address_space Space>
 class atomic_ref<int, DefaultOrder, DefaultScope, Space> {
 public:
+
+  static_assert(Space == access::address_space::generic_space ||
+                    Space == access::address_space::global_space ||
+                    Space == access::address_space::local_space,
+                "Invalid address space for atomic_ref");
+
+  using value_type = int;
+  using difference_type = value_type;
+
+  static constexpr std::size_t required_alignment = alignof(int);
+  // TODO
+  static constexpr bool is_always_lock_free = true;
+
+  static constexpr memory_order default_read_order =
+      memory_order_traits<DefaultOrder>::read_order;
+  static constexpr memory_order default_write_order =
+      memory_order_traits<DefaultOrder>::write_order;
+  static constexpr memory_order default_read_modify_write_order = DefaultOrder;
+  static constexpr memory_scope default_scope = DefaultScope;
+
+  bool is_lock_free() const noexcept {
+    // TODO
+    return true;
+  }
+
+  explicit atomic_ref(int& x)
+  : _ptr{&x} {}
+
+  atomic_ref(const atomic_ref&) noexcept = default;
+  atomic_ref& operator=(const atomic_ref&) = delete;
+
+  void store(int operand,
+    memory_order order = default_write_order,
+    memory_scope scope = default_scope) const noexcept {
+    detail::__acpp_atomic_store<Space>(_ptr, operand, order, scope);
+  }
+
+  int operator=(int desired) const noexcept {
+    store(desired);
+    return desired;
+  }
+
+  int load(memory_order order = default_read_order,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_load<Space>(_ptr, order, scope);
+  }
+
+  operator int() const noexcept {
+    return load();
+  }
+
+  int exchange(int operand,
+    memory_order order = default_read_modify_write_order,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_exchange<Space>(_ptr, operand, order, scope);
+  }
+
+  bool compare_exchange_weak(int &expected, int desired,
+    memory_order success,
+    memory_order failure,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_compare_exchange_weak<Space>(
+        _ptr, expected, desired, success, failure, scope);
+  }
+
+  bool
+  compare_exchange_weak(int &expected, int desired,
+                        memory_order order = default_read_modify_write_order,
+                        memory_scope scope = default_scope) const noexcept {
+    return compare_exchange_weak(expected, desired, order, order, scope);
+  }
+
+  bool compare_exchange_strong(int &expected, int desired,
+    memory_order success,
+    memory_order failure,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_compare_exchange_strong<Space>(
+        _ptr, expected, desired, success, failure, scope);
+  }
+
+  bool compare_exchange_strong(int &expected, int desired,
+    memory_order order = default_read_modify_write_order,
+    memory_scope scope = default_scope) const noexcept {
+    return compare_exchange_strong(expected, desired, order, order, scope);
+  }
+
   int fetch_add(int operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
@@ -234,6 +320,91 @@ template <memory_order DefaultOrder, memory_scope DefaultScope,
           access::address_space Space>
 class atomic_ref<float, DefaultOrder, DefaultScope, Space> {
 public:
+  
+  static_assert(Space == access::address_space::generic_space ||
+                    Space == access::address_space::global_space ||
+                    Space == access::address_space::local_space,
+                "Invalid address space for atomic_ref");
+
+  using value_type = float;
+  using difference_type = value_type;
+
+  static constexpr std::size_t required_alignment = alignof(float);
+  // TODO
+  static constexpr bool is_always_lock_free = true;
+
+  static constexpr memory_order default_read_order =
+      memory_order_traits<DefaultOrder>::read_order;
+  static constexpr memory_order default_write_order =
+      memory_order_traits<DefaultOrder>::write_order;
+  static constexpr memory_order default_read_modify_write_order = DefaultOrder;
+  static constexpr memory_scope default_scope = DefaultScope;
+
+  bool is_lock_free() const noexcept {
+    // TODO
+    return true;
+  }
+
+  explicit atomic_ref(float& x)
+  : _ptr{&x} {}
+
+  atomic_ref(const atomic_ref&) noexcept = default;
+  atomic_ref& operator=(const atomic_ref&) = delete;
+
+  void store(float operand,
+    memory_order order = default_write_order,
+    memory_scope scope = default_scope) const noexcept {
+    detail::__acpp_atomic_store<Space>(_ptr, operand, order, scope);
+  }
+
+  float operator=(float desired) const noexcept {
+    store(desired);
+    return desired;
+  }
+
+  float load(memory_order order = default_read_order,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_load<Space>(_ptr, order, scope);
+  }
+
+  operator float() const noexcept {
+    return load();
+  }
+
+  float exchange(float operand,
+    memory_order order = default_read_modify_write_order,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_exchange<Space>(_ptr, operand, order, scope);
+  }
+
+  bool compare_exchange_weak(float &expected, float desired,
+    memory_order success,
+    memory_order failure,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_compare_exchange_weak<Space>(
+        _ptr, expected, desired, success, failure, scope);
+  }
+
+  bool
+  compare_exchange_weak(float &expected, float desired,
+                        memory_order order = default_read_modify_write_order,
+                        memory_scope scope = default_scope) const noexcept {
+    return compare_exchange_weak(expected, desired, order, order, scope);
+  }
+
+  bool compare_exchange_strong(float &expected, float desired,
+    memory_order success,
+    memory_order failure,
+    memory_scope scope = default_scope) const noexcept {
+    return detail::__acpp_atomic_compare_exchange_strong<Space>(
+        _ptr, expected, desired, success, failure, scope);
+  }
+
+  bool compare_exchange_strong(float &expected, float desired,
+    memory_order order = default_read_modify_write_order,
+    memory_scope scope = default_scope) const noexcept {
+    return compare_exchange_strong(expected, desired, order, order, scope);
+  }
 
   float fetch_add(float operand,
                      memory_order order = default_read_modify_write_order,
