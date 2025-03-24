@@ -83,11 +83,11 @@ class device_id
 public:
   device_id() = default;
   device_id(backend_descriptor b, int id);
-  
+
   bool is_host() const;
   backend_id get_backend() const;
   backend_descriptor get_full_backend_descriptor() const;
-  
+
   int get_id() const;
 
   void dump(std::ostream& ostr) const;
