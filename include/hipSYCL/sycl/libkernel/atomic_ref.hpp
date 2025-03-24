@@ -43,7 +43,8 @@ struct memory_order_traits<memory_order::seq_cst> {
 
 
 template <typename T, memory_order DefaultOrder, memory_scope DefaultScope,
-          access::address_space Space = access::address_space::generic_space>
+          access::address_space Space = access::address_space::generic_space,
+          typename Enable = void>
 class atomic_ref {
 public:
   static_assert(std::is_same_v<T, int> || std::is_same_v<T, unsigned int> ||
@@ -119,8 +120,7 @@ public:
         _ptr, expected, desired, success, failure, scope);
   }
 
-  bool
-  compare_exchange_weak(T &expected, T desired,
+  bool compare_exchange_weak(T &expected, T desired,
                         memory_order order = default_read_modify_write_order,
                         memory_scope scope = default_scope) const noexcept {
     return compare_exchange_weak(expected, desired, order, order, scope);
@@ -144,11 +144,10 @@ private:
   T* _ptr;
 };
 
-template <class Integral,
-          typename std::enable_if_t<std::is_integral_v<Integral>, int> = 0,// C++17
+template <typename Integral,
           memory_order DefaultOrder, memory_scope DefaultScope,
           access::address_space Space>
-class atomic_ref<Integral, DefaultOrder, DefaultScope, Space> {
+class atomic_ref<Integral, DefaultOrder, DefaultScope, Space, std::enable_if_t<std::is_integral_v<Integral>>> {
 public:
 
   static_assert(Space == access::address_space::generic_space ||
