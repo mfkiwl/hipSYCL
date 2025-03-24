@@ -155,10 +155,10 @@ public:
                     Space == access::address_space::local_space,
                 "Invalid address space for atomic_ref");
 
-  using value_type = int;
+  using value_type = Integral;
   using difference_type = value_type;
 
-  static constexpr std::size_t required_alignment = alignof(int);
+  static constexpr std::size_t required_alignment = alignof(Integral);
   // TODO
   static constexpr bool is_always_lock_free = true;
 
@@ -174,39 +174,39 @@ public:
     return true;
   }
 
-  explicit atomic_ref(int& x)
+  explicit atomic_ref(Integral& x)
   : _ptr{&x} {}
 
   atomic_ref(const atomic_ref&) noexcept = default;
   atomic_ref& operator=(const atomic_ref&) = delete;
 
-  void store(int operand,
+  void store(Integral operand,
     memory_order order = default_write_order,
     memory_scope scope = default_scope) const noexcept {
     detail::__acpp_atomic_store<Space>(_ptr, operand, order, scope);
   }
 
-  int operator=(int desired) const noexcept {
+  Integral operator=(Integral desired) const noexcept {
     store(desired);
     return desired;
   }
 
-  int load(memory_order order = default_read_order,
+  Integral load(memory_order order = default_read_order,
     memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_load<Space>(_ptr, order, scope);
   }
 
-  operator int() const noexcept {
+  operator Integral() const noexcept {
     return load();
   }
 
-  int exchange(int operand,
+  Integral exchange(Integral operand,
     memory_order order = default_read_modify_write_order,
     memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_exchange<Space>(_ptr, operand, order, scope);
   }
 
-  bool compare_exchange_weak(int &expected, int desired,
+  bool compare_exchange_weak(Integral &expected, Integral desired,
     memory_order success,
     memory_order failure,
     memory_scope scope = default_scope) const noexcept {
@@ -215,13 +215,13 @@ public:
   }
 
   bool
-  compare_exchange_weak(int &expected, int desired,
+  compare_exchange_weak(Integral &expected, Integral desired,
                         memory_order order = default_read_modify_write_order,
                         memory_scope scope = default_scope) const noexcept {
     return compare_exchange_weak(expected, desired, order, order, scope);
   }
 
-  bool compare_exchange_strong(int &expected, int desired,
+  bool compare_exchange_strong(Integral &expected, Integral desired,
     memory_order success,
     memory_order failure,
     memory_scope scope = default_scope) const noexcept {
@@ -229,92 +229,92 @@ public:
         _ptr, expected, desired, success, failure, scope);
   }
 
-  bool compare_exchange_strong(int &expected, int desired,
+  bool compare_exchange_strong(Integral &expected, Integral desired,
     memory_order order = default_read_modify_write_order,
     memory_scope scope = default_scope) const noexcept {
     return compare_exchange_strong(expected, desired, order, order, scope);
   }
 
-  int fetch_add(int operand,
+  Integral fetch_add(Integral operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_add<Space>(_ptr, operand, order, scope);
   }
 
-  int fetch_sub(int operand,
+  Integral fetch_sub(Integral operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_sub<Space>(_ptr, operand, order, scope);
   }
 
-  int fetch_and(int operand,
+  Integral fetch_and(Integral operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_and<Space>(_ptr, operand, order, scope);
   }
 
-  int fetch_or(int operand,
+  Integral fetch_or(Integral operand,
                     memory_order order = default_read_modify_write_order,
                     memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_or<Space>(_ptr, operand, order, scope);
   }
 
-  int fetch_xor(int operand,
+  Integral fetch_xor(Integral operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_xor<Space>(_ptr, operand, order, scope);
   }
 
-  int fetch_min(int operand,
+  Integral fetch_min(Integral operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_min<Space>(_ptr, operand, order, scope);
   }
 
-  int fetch_max(int operand,
+  Integral fetch_max(Integral operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_max<Space>(_ptr, operand, order, scope);
   }
 
-  int operator++(int) const noexcept {
-    return fetch_add(int{1});
+  Integral operator++(Integral) const noexcept {
+    return fetch_add(Integral{1});
   }
 
-  int operator--(int) const noexcept {
-    return fetch_sub(int{1});
+  Integral operator--(Integral) const noexcept {
+    return fetch_sub(Integral{1});
   }
 
-  int operator++() const noexcept {
-    return fetch_add(int{1}) + 1;
+  Integral operator++() const noexcept {
+    return fetch_add(Integral{1}) + 1;
   }
 
-  int operator--() const noexcept {
-    return fetch_sub(int{1}) - 1;
+  Integral operator--() const noexcept {
+    return fetch_sub(Integral{1}) - 1;
   }
 
-  int operator+=(int op) const noexcept {
+  Integral operator+=(Integral op) const noexcept {
     return fetch_add(op);
   }
 
-  int operator-=(int op) const noexcept {
+  Integral operator-=(Integral op) const noexcept {
     return fetch_sub(op);
   }
 
-  int operator&=(int op) const noexcept {
+  Integral operator&=(Integral op) const noexcept {
     return fetch_and(op);
   }
 
-  int operator|=(int op) const noexcept {
+  Integral operator|=(Integral op) const noexcept {
     return fetch_or(op);
   }
 
-  int operator^=(int op) const noexcept {
+  Integral operator^=(Integral op) const noexcept {
     return fetch_xor(op);
   }
 
 private:
-  int* _ptr;
+  Integral* _ptr;
 };
 
 template <memory_order DefaultOrder, memory_scope DefaultScope,
