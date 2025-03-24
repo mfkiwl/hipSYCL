@@ -144,9 +144,11 @@ private:
   T* _ptr;
 };
 
-template <memory_order DefaultOrder, memory_scope DefaultScope,
+template <class Integral,
+          typename std::enable_if_t<std::is_integral_v<Integral>, int> = 0,// C++17
+          memory_order DefaultOrder, memory_scope DefaultScope,
           access::address_space Space>
-class atomic_ref<int, DefaultOrder, DefaultScope, Space> {
+class atomic_ref<Integral, DefaultOrder, DefaultScope, Space> {
 public:
 
   static_assert(Space == access::address_space::generic_space ||
