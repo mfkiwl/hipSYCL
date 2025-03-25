@@ -19,6 +19,7 @@
 #include "hipSYCL/runtime/device_id.hpp"
 
 #include "types.hpp"
+#include "backend.hpp"
 #include "device_selector.hpp"
 #include "info/info.hpp"
 #include "version.hpp"
@@ -55,6 +56,9 @@ public:
         rt::platform_id{dev.get_backend(), static_cast<int>(platform_index)};
   }
 
+  backend get_backend() const noexcept {
+    return _platform.get_backend();
+  }
 
   std::vector<device>
   get_devices(info::device_type type = info::device_type::all) const {
