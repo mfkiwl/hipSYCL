@@ -441,7 +441,6 @@ T __noinline_clz(T a) noexcept {
     return __builtin_clz(a);
 }
 
-
 template <class T,
           std::enable_if_t<
               (std::is_integral_v<T> && sizeof(T) < 4),
@@ -458,14 +457,13 @@ HIPSYCL_HIPLIKE_BUILTIN T __acpp_clz(T x) noexcept {
   auto v = static_cast<__acpp_int32>(static_cast<Usigned>(x));
 
   #if ACPP_LIBKERNEL_IS_DEVICE_PASS_CUDA 
-    // here we force noinline on clz to avoid the if(v) to be optimized away as
-    // llvm rightfully assume that clz(0) == bitsize
-    // see : https://llvm.org/docs/LangRef.html#llvm-ctlz-intrinsic
     return v ? __builtin_clz(v)-diff : size;
   #else
     // on hip we have to circumvent the clz(0) bug
     // here we force noinline on clz to avoid the if(v) to be optimized away as
-    // llvm rightfully assume that clz(0) == bitsize
+    // llvm rightfully assume that clz(0) == bitsize. 
+    // However, in some LLVM versions, the amdgpu
+    // backend does not seem to honor this guarantee from the LLVM LangRef.
     // see : https://llvm.org/docs/LangRef.html#llvm-ctlz-intrinsic
     return v ? __noinline_clz(v)-diff : size;
   #endif
