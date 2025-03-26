@@ -277,11 +277,11 @@ public:
     return detail::__acpp_atomic_fetch_max<Space>(_ptr, operand, order, scope);
   }
 
-  Integral operator++(Integral) const noexcept {
+  Integral operator++(int) const noexcept {
     return fetch_add(Integral{1});
   }
 
-  Integral operator--(Integral) const noexcept {
+  Integral operator--(int) const noexcept {
     return fetch_sub(Integral{1});
   }
 
