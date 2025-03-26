@@ -55,93 +55,6 @@ public:
                     std::is_same_v<T, float> || std::is_same_v<T, double> ||
                     std::is_pointer_v<T>,
                 "Invalid data type for atomic_ref");
-
-  static_assert(Space == access::address_space::generic_space ||
-                    Space == access::address_space::global_space ||
-                    Space == access::address_space::local_space,
-                "Invalid address space for atomic_ref");
-
-  using value_type = T;
-  using difference_type = value_type;
-
-  static constexpr std::size_t required_alignment = alignof(T);
-  // TODO
-  static constexpr bool is_always_lock_free = true;
-
-  static constexpr memory_order default_read_order =
-      memory_order_traits<DefaultOrder>::read_order;
-  static constexpr memory_order default_write_order =
-      memory_order_traits<DefaultOrder>::write_order;
-  static constexpr memory_order default_read_modify_write_order = DefaultOrder;
-  static constexpr memory_scope default_scope = DefaultScope;
-
-  bool is_lock_free() const noexcept {
-    // TODO
-    return true;
-  }
-
-  explicit atomic_ref(T& x)
-  : _ptr{&x} {}
-
-  atomic_ref(const atomic_ref&) noexcept = default;
-  atomic_ref& operator=(const atomic_ref&) = delete;
-
-  void store(T operand,
-    memory_order order = default_write_order,
-    memory_scope scope = default_scope) const noexcept {
-    detail::__acpp_atomic_store<Space>(_ptr, operand, order, scope);
-  }
-
-  T operator=(T desired) const noexcept {
-    store(desired);
-    return desired;
-  }
-
-  T load(memory_order order = default_read_order,
-    memory_scope scope = default_scope) const noexcept {
-    return detail::__acpp_atomic_load<Space>(_ptr, order, scope);
-  }
-
-  operator T() const noexcept {
-    return load();
-  }
-
-  T exchange(T operand,
-    memory_order order = default_read_modify_write_order,
-    memory_scope scope = default_scope) const noexcept {
-    return detail::__acpp_atomic_exchange<Space>(_ptr, operand, order, scope);
-  }
-
-  bool compare_exchange_weak(T &expected, T desired,
-    memory_order success,
-    memory_order failure,
-    memory_scope scope = default_scope) const noexcept {
-    return detail::__acpp_atomic_compare_exchange_weak<Space>(
-        _ptr, expected, desired, success, failure, scope);
-  }
-
-  bool compare_exchange_weak(T &expected, T desired,
-                        memory_order order = default_read_modify_write_order,
-                        memory_scope scope = default_scope) const noexcept {
-    return compare_exchange_weak(expected, desired, order, order, scope);
-  }
-
-  bool compare_exchange_strong(T &expected, T desired,
-    memory_order success,
-    memory_order failure,
-    memory_scope scope = default_scope) const noexcept {
-    return detail::__acpp_atomic_compare_exchange_strong<Space>(
-        _ptr, expected, desired, success, failure, scope);
-  }
-
-  bool compare_exchange_strong(T &expected, T desired,
-    memory_order order = default_read_modify_write_order,
-    memory_scope scope = default_scope) const noexcept {
-    return compare_exchange_strong(expected, desired, order, order, scope);
-  }
-
-private:
-  T* _ptr;
 };
 
 template <typename Integral,
@@ -149,6 +62,13 @@ template <typename Integral,
           access::address_space Space>
 class atomic_ref<Integral, DefaultOrder, DefaultScope, Space, std::enable_if_t<std::is_integral_v<Integral>>> {
 public:
+
+  static_assert(std::is_same_v<Integral, int> || std::is_same_v<Integral, unsigned int> ||
+                    std::is_same_v<Integral, long> ||
+                    std::is_same_v<Integral, unsigned long> ||
+                    std::is_same_v<Integral, long long> ||
+                    std::is_same_v<Integral, unsigned long long> ||
+                "Invalid data type for atomic_ref");
 
   static_assert(Space == access::address_space::generic_space ||
                     Space == access::address_space::global_space ||
@@ -321,6 +241,9 @@ template <typename Floating, memory_order DefaultOrder, memory_scope DefaultScop
           access::address_space Space>
 class atomic_ref<Floating, DefaultOrder, DefaultScope, Space, std::enable_if_t<std::is_floating_point_v<Floating>>> {
 public:
+
+  static_assert(std::is_same_v<Floating, float> || std::is_same_v<Floating, double> ||
+                "Invalid data type for atomic_ref");
   
   static_assert(Space == access::address_space::generic_space ||
                     Space == access::address_space::global_space ||
