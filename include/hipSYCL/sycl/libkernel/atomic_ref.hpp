@@ -317,9 +317,9 @@ private:
   Integral* _ptr;
 };
 
-template <memory_order DefaultOrder, memory_scope DefaultScope,
+template <typename Floating, memory_order DefaultOrder, memory_scope DefaultScope,
           access::address_space Space>
-class atomic_ref<float, DefaultOrder, DefaultScope, Space> {
+class atomic_ref<Floating, DefaultOrder, DefaultScope, Space, std::enable_if_t<std::is_floating_point_v<Floating>>> {
 public:
   
   static_assert(Space == access::address_space::generic_space ||
@@ -327,10 +327,10 @@ public:
                     Space == access::address_space::local_space,
                 "Invalid address space for atomic_ref");
 
-  using value_type = float;
+  using value_type = Floating;
   using difference_type = value_type;
 
-  static constexpr std::size_t required_alignment = alignof(float);
+  static constexpr std::size_t required_alignment = alignof(Floating);
   // TODO
   static constexpr bool is_always_lock_free = true;
 
@@ -346,39 +346,39 @@ public:
     return true;
   }
 
-  explicit atomic_ref(float& x)
+  explicit atomic_ref(Floating& x)
   : _ptr{&x} {}
 
   atomic_ref(const atomic_ref&) noexcept = default;
   atomic_ref& operator=(const atomic_ref&) = delete;
 
-  void store(float operand,
+  void store(Floating operand,
     memory_order order = default_write_order,
     memory_scope scope = default_scope) const noexcept {
     detail::__acpp_atomic_store<Space>(_ptr, operand, order, scope);
   }
 
-  float operator=(float desired) const noexcept {
+  Floating operator=(Floating desired) const noexcept {
     store(desired);
     return desired;
   }
 
-  float load(memory_order order = default_read_order,
+  Floating load(memory_order order = default_read_order,
     memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_load<Space>(_ptr, order, scope);
   }
 
-  operator float() const noexcept {
+  operator Floating() const noexcept {
     return load();
   }
 
-  float exchange(float operand,
+  Floating exchange(Floating operand,
     memory_order order = default_read_modify_write_order,
     memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_exchange<Space>(_ptr, operand, order, scope);
   }
 
-  bool compare_exchange_weak(float &expected, float desired,
+  bool compare_exchange_weak(Floating &expected, Floating desired,
     memory_order success,
     memory_order failure,
     memory_scope scope = default_scope) const noexcept {
@@ -387,13 +387,13 @@ public:
   }
 
   bool
-  compare_exchange_weak(float &expected, float desired,
+  compare_exchange_weak(Floating &expected, Floating desired,
                         memory_order order = default_read_modify_write_order,
                         memory_scope scope = default_scope) const noexcept {
     return compare_exchange_weak(expected, desired, order, order, scope);
   }
 
-  bool compare_exchange_strong(float &expected, float desired,
+  bool compare_exchange_strong(Floating &expected, Floating desired,
     memory_order success,
     memory_order failure,
     memory_scope scope = default_scope) const noexcept {
@@ -401,50 +401,50 @@ public:
         _ptr, expected, desired, success, failure, scope);
   }
 
-  bool compare_exchange_strong(float &expected, float desired,
+  bool compare_exchange_strong(Floating &expected, Floating desired,
     memory_order order = default_read_modify_write_order,
     memory_scope scope = default_scope) const noexcept {
     return compare_exchange_strong(expected, desired, order, order, scope);
   }
 
-  float fetch_add(float operand,
+  Floating fetch_add(Floating operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_add<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  float fetch_sub(float operand,
+  Floating fetch_sub(Floating operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_sub<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  float fetch_min(float operand,
+  Floating fetch_min(Floating operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_min<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  float fetch_max(float operand,
+  Floating fetch_max(Floating operand,
                      memory_order order = default_read_modify_write_order,
                      memory_scope scope = default_scope) const noexcept {
     return detail::__acpp_atomic_fetch_max<Space>(_ptr, operand, order,
                                                      scope);
   }
 
-  float operator+=(float op) const noexcept {
+  Floating operator+=(Floating op) const noexcept {
     return fetch_add(op);
   }
 
-  float operator-=(float op) const noexcept {
+  Floating operator-=(Floating op) const noexcept {
     return fetch_sub(op);
   }
 
 private:
-  float* _ptr;
+  Floating* _ptr;
 };
 
 template <typename T, memory_order DefaultOrder, memory_scope DefaultScope,
