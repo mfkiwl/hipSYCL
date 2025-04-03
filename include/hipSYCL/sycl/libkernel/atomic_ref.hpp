@@ -63,13 +63,6 @@ template <typename Integral,
 class atomic_ref<Integral, DefaultOrder, DefaultScope, Space, std::enable_if_t<std::is_integral_v<Integral>>> {
 public:
 
-  static_assert(std::is_same_v<Integral, int> || std::is_same_v<Integral, unsigned int> ||
-                    std::is_same_v<Integral, long> ||
-                    std::is_same_v<Integral, unsigned long> ||
-                    std::is_same_v<Integral, long long> ||
-                    std::is_same_v<Integral, unsigned long long> ||
-                "Invalid data type for atomic_ref");
-
   static_assert(Space == access::address_space::generic_space ||
                     Space == access::address_space::global_space ||
                     Space == access::address_space::local_space,
@@ -242,9 +235,6 @@ template <typename Floating, memory_order DefaultOrder, memory_scope DefaultScop
 class atomic_ref<Floating, DefaultOrder, DefaultScope, Space, std::enable_if_t<std::is_floating_point_v<Floating>>> {
 public:
 
-  static_assert(std::is_same_v<Floating, float> || std::is_same_v<Floating, double> ||
-                "Invalid data type for atomic_ref");
-  
   static_assert(Space == access::address_space::generic_space ||
                     Space == access::address_space::global_space ||
                     Space == access::address_space::local_space,
