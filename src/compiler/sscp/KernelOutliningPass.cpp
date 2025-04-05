@@ -161,21 +161,23 @@ private:
         // Follow address space casts, we don't care about pointer address spaces
         rankUsers(Current, Scores, CurrentScore);
       } else if(auto CI = llvm::dyn_cast<llvm::CallBase>(Current)) {
-        // Ugh, the value is forwarded as an argument into some other function, need
-        // to continue looking there...
+        if(CI->getCalledFunction()) {
+          // Ugh, the value is forwarded as an argument into some other function, need
+          // to continue looking there...
 
-        // First, check if we have any interesting allocas in the called function
-        scanAllocas(CI->getCalledFunction(), Scores);
+          // First, check if we have any interesting allocas in the called function
+          scanAllocas(CI->getCalledFunction(), Scores);
 
-        // Next, follow the argument that was passed in there
-        for (int i = 0; i < CI->getCalledFunction()->getFunctionType()->getNumParams(); ++i) {
-          if(CI->getArgOperand(i) == Parent) {
-            auto Arg = CI->getCalledFunction()->getArg(i);
-            // Never, ever take into account the callee argument. This should never happen,
-            // but if it does, it will go terribly because we will take into account users of functions,
-            // not arguments anymore.
-            if(!llvm::isa<llvm::Function>(Arg))
-              rankUsers(Arg, Scores, CurrentScore);
+          // Next, follow the argument that was passed in there
+          for (int i = 0; i < CI->getCalledFunction()->getFunctionType()->getNumParams(); ++i) {
+            if (CI->getArgOperand(i) == Parent) {
+              auto Arg = CI->getCalledFunction()->getArg(i);
+              // Never, ever take into account the callee argument. This should never happen,
+              // but if it does, it will go terribly because we will take into account users of
+              // functions, not arguments anymore.
+              if (!llvm::isa<llvm::Function>(Arg))
+                rankUsers(Arg, Scores, CurrentScore);
+            }
           }
         }
       }

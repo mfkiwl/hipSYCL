@@ -69,7 +69,10 @@ using exception_ptr [[deprecated("Use std::exception_ptr instead")]] = exception
 using exception_list = std::vector<std::exception_ptr>;
 using async_handler = std::function<void(sycl::exception_list)>;
 
-class half;
+namespace detail::half_impl {
+    class half;
+}
+using half = detail::half_impl::half;
 
 // \todo Better use uint32_t etc
 namespace detail {

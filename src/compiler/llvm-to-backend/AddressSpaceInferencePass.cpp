@@ -132,8 +132,9 @@ llvm::PreservedAnalyses AddressSpaceInferencePass::run(llvm::Module &M,
             // so we cannot just make them use ASCastInst instead of AI now.
             forEachUseOfPointerValue(AI, [&](llvm::Value* U){
               if(auto* CB = llvm::dyn_cast<llvm::CallBase>(U)) {
-                llvm::StringRef CalleeName = CB->getCalledFunction()->getName();
-                if(llvmutils::starts_with(CalleeName,"llvm.lifetime")) {
+                if (CB->getCalledFunction() &&
+                    llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.lifetime")) {
+                  llvm::StringRef CalleeName = CB->getCalledFunction()->getName();
                   InstsToRemove.push_back(CB);
 
                   llvm::Intrinsic::ID Id = llvmutils::starts_with(CalleeName, "llvm.lifetime.start")
