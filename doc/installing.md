@@ -4,7 +4,7 @@
 
 ## Operating system support
 
-Operating system support currently strongly focuses on Linux. On Mac, only the CPU backend is expected to work. Windows support with CPU and CUDA backends is experimental, see [Using AdaptiveCpp on Windows](https://github.com/OpenSYCL/OpenSYCL/wiki/Using-Open-SYCL-on-Windows).
+Operating system support currently strongly focuses on Linux. On Mac, only the CPU backend is expected to work. Windows support with CPU and CUDA backends is experimental, see [Using AdaptiveCpp on Windows](https://github.com/OpenSYCL/OpenSYCL/wiki/Using-AdaptiveCpp-on-Windows).
 
 ## Installation from source (Linux)
 

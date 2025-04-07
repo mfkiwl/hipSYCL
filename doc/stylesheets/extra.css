@@ -7,3 +7,7 @@
   --md-primary-fg-color: #c50d29;
   --md-accent-fg-color: #c50d29;
 }
+
+.md-nav__source {
+  background-color: #c50d29;
+}

@@ -9,6 +9,10 @@ if(POLICY CMP0167) # Since CMake 3.30
     cmake_policy(SET CMP0167 OLD)
 endif()
 
+if(CMAKE_VERSION VERSION_GREATER_EQUAL 4.0)
+  # Prevent CMake >= 4.0 from failing when configuring, e.g. the ocl-cxx-headers.
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+endif()
 
 set(ACPP_VERSION_MAJOR 24)
 set(ACPP_VERSION_MINOR 10)
