@@ -355,6 +355,17 @@ if(WITH_CPU_BACKEND)
 
     set(OMP_TARGET OpenMP::OpenMP_CXX)
   endif()
+  
+  find_path( NUMA_INCLUDE_DIR NAMES numa.h)
+  find_library( NUMA_LIBRARY NAMES numa)
+
+  if(NOT NUMA_INCLUDE_DIR OR NOT NUMA_LIBRARY)
+    message(WARNING "Could not find NUMA")
+  else()
+    target_compile_definitions(rt-backend-omp PRIVATE -DLIB_NUMA_AVAILABLE)
+    target_link_libraries(rt-backend-omp PRIVATE ${NUMA_LIBRARY})
+    target_include_directories(rt-backend-omp PRIVATE ${NUMA_INCLUDE_DIR})
+  endif()
 
   target_include_directories(rt-backend-omp PRIVATE
     ${HIPSYCL_SOURCE_DIR}/include 
