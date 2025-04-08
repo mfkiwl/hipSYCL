@@ -200,18 +200,18 @@ struct KernelInfo {
 
 #ifdef _MSC_VER
 void replaceInvalidMSABICharsInSymbolNames(llvm::Module &M) {
-    auto UpdateName = [](auto &S) {
-      std::string Name(S.getName());
-      replaceInvalidMSABICharsInSymbolName(Name);
-      S.setName(Name);
-    };
+  auto UpdateName = [](auto &S) {
+    std::string Name(S.getName());
+    replaceInvalidMSABICharsInSymbolName(Name);
+    S.setName(Name);
+  };
 
-    for(auto &F : M) {
-      UpdateName(F);
-    }
-    for(auto &G : M.globals()){
-      UpdateName(G);
-    }
+  for(auto &F : M) {
+    UpdateName(F);
+  }
+  for(auto &G : M.globals()){
+    UpdateName(G);
+  }
 }
 #endif
 
