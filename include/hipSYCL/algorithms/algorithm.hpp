@@ -411,6 +411,40 @@ sycl::event replace_copy(sycl::queue &q, ForwardIt1 first, ForwardIt1 last,
       new_value, deps);
 }
 
+template <class BidirIt>
+sycl::event reverse(sycl::queue &q, BidirIt first, BidirIt last,
+                     const std::vector<sycl::event> &deps = {}) {
+  auto size = std::distance(first, last);
+  if (first == last || size == 1)
+    return sycl::event{};
+
+  return q.parallel_for(sycl::range{size/2}, deps,
+                        [=](sycl::id<1> id) {
+                          auto offset = size - id[0] - 1;
+                          auto input = std::next(first, id[0]);
+                          auto output = std::next(first, offset);
+                          std::iter_swap(input, output);
+                        });
+}
+
+template <class BidirIt, class ForwardIt>
+sycl::event reverse_copy(sycl::queue &q, BidirIt first,
+                         BidirIt last, ForwardIt d_first,
+                         const std::vector<sycl::event> &deps = {}) {
+  if (first == last)
+    return sycl::event{};
+
+  auto size = std::distance(first, last);
+
+  return q.parallel_for(sycl::range{size}, deps,
+                        [=](sycl::id<1> id) {
+                          auto offset = size - id[0] - 1;
+                          auto input = std::next(first, offset);
+                          auto output = std::next(d_first, id[0]);
+                          *output = *input;
+                        });
+}
+
 // Need transform_reduce functionality for find etc, so forward
 // declare here.
 /*template <class ForwardIt, class T, class BinaryReductionOp,
