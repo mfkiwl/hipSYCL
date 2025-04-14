@@ -435,6 +435,11 @@ HIPSYCL_HIPLIKE_BUILTIN T __acpp_ctz(T x) noexcept {
 
 }
 
+template<class T>
+HIPSYCL_HIPLIKE_BUILTIN __attribute__((noinline))
+T __noinline_clz(T a) noexcept {
+    return __builtin_clz(a);
+}
 
 template <class T,
           std::enable_if_t<
@@ -450,7 +455,18 @@ HIPSYCL_HIPLIKE_BUILTIN T __acpp_clz(T x) noexcept {
   constexpr T size = CHAR_BIT*sizeof(T);
 
   auto v = static_cast<__acpp_int32>(static_cast<Usigned>(x));
-  return v ? __clz(v)-diff : size;
+
+  #if ACPP_LIBKERNEL_IS_DEVICE_PASS_CUDA 
+    return v ? __builtin_clz(v)-diff : size;
+  #else
+    // on hip we have to circumvent the clz(0) bug
+    // here we force noinline on clz to avoid the if(v) to be optimized away as
+    // llvm rightfully assume that clz(0) == bitsize. 
+    // However, in some LLVM versions, the amdgpu
+    // backend does not seem to honor this guarantee from the LLVM LangRef.
+    // see : https://llvm.org/docs/LangRef.html#llvm-ctlz-intrinsic
+    return v ? __noinline_clz(v)-diff : size;
+  #endif
   
 }
 

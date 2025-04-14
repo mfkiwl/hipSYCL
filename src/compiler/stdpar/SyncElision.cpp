@@ -79,11 +79,14 @@ void identifyStoresPotentiallyForStdparArgHandling(
                   return true;
                 }
               } else if (auto *CB = llvm::dyn_cast<llvm::CallBase>(Current)) {
-                if (StdparFunctions.contains(CB->getCalledFunction())) {
-                  Users.push_back(Current);
-                  return true;
-                } else if(llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.lifetime")) {
-                  return true;
+                auto* Callee = CB->getCalledFunction();
+                if(Callee) {
+                  if (StdparFunctions.contains(Callee)) {
+                    Users.push_back(Current);
+                    return true;
+                  } else if (llvmutils::starts_with(Callee->getName(), "llvm.lifetime")) {
+                    return true;
+                  }
                 }
               }
 

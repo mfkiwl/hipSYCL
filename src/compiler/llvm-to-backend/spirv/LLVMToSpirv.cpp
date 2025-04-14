@@ -258,8 +258,8 @@ bool LLVMToSpirvTranslator::toBackendFlavor(llvm::Module &M, PassHandler& PH) {
           // llvm-spirv translator does not like llvm.lifetime.start/end operate on generic
           // pointers.
           auto* CalledF = CB->getCalledFunction();
-          if (llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.start") ||
-              llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.end")) {
+          if (CalledF && (llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.start") ||
+                          llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.end"))) {
             if(CB->getNumOperands() > 1 && CB->getArgOperand(1)->getType()->isPointerTy())
               if (CB->getArgOperand(1)->getType()->getPointerAddressSpace() ==
                   ASMap[AddressSpace::Generic])
@@ -282,35 +282,45 @@ bool LLVMToSpirvTranslator::toBackendFlavor(llvm::Module &M, PassHandler& PH) {
 }
 
 bool LLVMToSpirvTranslator::translateToBackendFormat(llvm::Module &FlavoredModule, std::string &out) {
+  bool Create = true;
+  auto consumeError = [&](std::error_code EC) {
+    if(EC) {
+      if(Create)
+        this->registerError("LLVMToPtx: Could not create temp file: " + EC.message());
+      else
+        this->registerError("LLVMToPtx: Could not remove temp file: " + EC.message());
+      return false;
+    }
+    return true;
+  };
 
-  auto InputFile = llvm::sys::fs::TempFile::create("acpp-sscp-spirv-%%%%%%.bc");
-  auto OutputFile = llvm::sys::fs::TempFile::create("acpp-sscp-spirv-%%%%%%.spv");
+  int InputFD = 0;
+  llvm::SmallVector<char> InputFileNameBuf;
+  // don't use fs::TempFile, as we can't unlock the file for the clang invocation later... (Windows)
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-amdgpu", "bc", InputFD, InputFileNameBuf, llvm::sys::fs::OF_None))) return false;
+  std::string InputFileName = InputFileNameBuf.data();
 
-  if (auto Err = InputFile.takeError()) {
-    this->registerError("LLVMToSpirv: Could not create temp file: "+InputFile->TmpName);
-    return false;
+  llvm::SmallVector<char> OutputFile;
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-host", "hipfb", OutputFile, llvm::sys::fs::OF_None))) return false;
+  std::string OutputFileName = OutputFile.data();
+
+  Create = false;
+  AtScopeExit DestroyInputFile([&]() { consumeError(llvm::sys::fs::remove(InputFileName)); });
+  AtScopeExit DestroyOutputFile([&]() { consumeError(llvm::sys::fs::remove(OutputFileName)); });
+
+  {
+    llvm::raw_fd_ostream InputStream{InputFD, true};
+
+    llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
+    InputStream.flush();
   }
-
-  if (auto Err = OutputFile.takeError()) {
-    this->registerError("LLVMToPtx: Could not create temp file: " + OutputFile->TmpName);
-    return false;
-  }
-
-  AtScopeExit DestroyInputFile([&]() { consumeError(std::move(InputFile->discard())); });
-  AtScopeExit DestroyOutputFile([&]() { consumeError(std::move(OutputFile->discard())); });
-
-  std::error_code EC;
-  llvm::raw_fd_ostream InputStream{InputFile->FD, false};
-  
-  llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
-  InputStream.flush();
 
   std::string LLVMSpirVTranslator = hipsycl::common::filesystem::join_path(
       hipsycl::common::filesystem::get_install_directory(), HIPSYCL_RELATIVE_LLVMSPIRV_PATH);
 
 
   llvm::SmallVector<std::string> Args{
-      "-o=" + OutputFile->TmpName
+      "-o=" + OutputFileName
   };
   if(UseIntelLLVMSpirvArgs)
     appendIntelLLVMSpirvOptions(Args);
@@ -322,7 +332,7 @@ bool LLVMToSpirvTranslator::translateToBackendFormat(llvm::Module &FlavoredModul
   llvm::SmallVector<llvm::StringRef, 16> Invocation{LLVMSpirVTranslator};
   for(const auto& A : Args)
     Invocation.push_back(A);
-  Invocation.push_back(InputFile->TmpName);
+  Invocation.push_back(InputFileName);
 
   std::string ArgString;
   for(const auto& S : Invocation) {
@@ -341,7 +351,7 @@ bool LLVMToSpirvTranslator::translateToBackendFormat(llvm::Module &FlavoredModul
   }
   
   auto ReadResult =
-      llvm::MemoryBuffer::getFile(OutputFile->TmpName, -1);
+      llvm::MemoryBuffer::getFile(OutputFileName, -1);
   
   if(auto Err = ReadResult.getError()) {
     this->registerError("LLVMToSpirv: Could not read result file"+Err.message());

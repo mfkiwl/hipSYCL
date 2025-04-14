@@ -207,23 +207,23 @@ public:
   }
 
   Integral operator+=(Integral op) const noexcept {
-    return fetch_add(op);
+    return fetch_add(op) + op;
   }
 
   Integral operator-=(Integral op) const noexcept {
-    return fetch_sub(op);
+    return fetch_sub(op) - op;
   }
 
   Integral operator&=(Integral op) const noexcept {
-    return fetch_and(op);
+    return fetch_and(op) & op;
   }
 
   Integral operator|=(Integral op) const noexcept {
-    return fetch_or(op);
+    return fetch_or(op) | op;
   }
 
   Integral operator^=(Integral op) const noexcept {
-    return fetch_xor(op);
+    return fetch_xor(op) ^ op;
   }
 
 private:
@@ -349,11 +349,11 @@ public:
   }
 
   Floating operator+=(Floating op) const noexcept {
-    return fetch_add(op);
+    return fetch_add(op) + op;
   }
 
   Floating operator-=(Floating op) const noexcept {
-    return fetch_sub(op);
+    return fetch_sub(op) - op;
   }
 
 private:
@@ -505,11 +505,11 @@ public:
   }
 
   T* operator+=(difference_type x) const noexcept {
-    return fetch_add(x);
+    return fetch_add(x) + x;
   }
 
   T* operator-=(difference_type x) const noexcept {
-    return fetch_sub(x);
+    return fetch_sub(x) - x;
   }
 private:
   std::intptr_t* _ptr;

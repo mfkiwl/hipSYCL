@@ -15,6 +15,7 @@
 #include "hipSYCL/compiler/llvm-to-backend/GlobalInliningAttributorPass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/KnownGroupSizeOptPass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/LLVMToBackend.hpp"
+#include "hipSYCL/compiler/llvm-to-backend/NameHandling.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/KnownPtrParamAlignmentOptPass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/ProcessS2ReflectionPass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/Utils.hpp"
@@ -23,7 +24,6 @@
 #include "hipSYCL/compiler/utils/ProcessFunctionAnnotationsPass.hpp"
 #include "hipSYCL/compiler/utils/LLVMUtils.hpp"
 #include "hipSYCL/glue/llvm-sscp/jit-reflection/queries.hpp"
-#include "hipSYCL/sycl/access.hpp"
 
 #include <cstdint>
 
@@ -182,12 +182,14 @@ public:
       for(auto& BB : F) {
         for(auto& I : BB) {
           if(llvm::CallBase* CB = llvm::dyn_cast<llvm::CallBase>(&I)) {
-            // these instructions can sometimes appear as a byproduct of some transformations
-            // even without dynamic allocas, but they are generally unsupported on device
-            // backends.
-            if (llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.stacksave") ||
-                llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.stackrestore"))
-              CallsToRemove.push_back(CB);
+            if(CB->getCalledFunction()) {
+              // these instructions can sometimes appear as a byproduct of some transformations
+              // even without dynamic allocas, but they are generally unsupported on device
+              // backends.
+              if (llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.stacksave") ||
+                  llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.stackrestore"))
+                CallsToRemove.push_back(CB);
+            }
           }
         }
       }
