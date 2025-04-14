@@ -595,6 +595,22 @@ public:
   : buffer(hostData, bufferRange, AllocatorT(), propList)
   {}
 
+#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 170000
+  // libc++ prior 17 has messed up implicit conversion between unique and shared ptrs.
+  template <class D>
+  buffer(std::unique_ptr<T, D> &&hostData,
+         const range<dimensions> &bufferRange,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T>(std::move(hostData)), bufferRange, AllocatorT(), propList)
+  {}
+  template <class D>
+  buffer(std::unique_ptr<T, D> &&hostData,
+         const range<dimensions> &bufferRange, AllocatorT allocator,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T>(std::move(hostData)), bufferRange, allocator, propList)
+  {}
+#endif
+
   buffer(const std::shared_ptr<T[]> &hostData,
          const range<dimensions> &bufferRange, AllocatorT allocator,
          const property_list &propList = {})
@@ -631,6 +647,23 @@ public:
          const property_list &propList = {})
   : buffer(hostData, bufferRange, AllocatorT(), propList)
   {}
+
+
+#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 170000
+  // libc++ prior 17 has messed up implicit conversion between unique and shared ptrs.
+  template <class D>
+  buffer(std::unique_ptr<T[], D> &&hostData,
+         const range<dimensions> &bufferRange,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T[]>(std::move(hostData)), bufferRange, AllocatorT(), propList)
+  {}
+  template <class D>
+  buffer(std::unique_ptr<T[], D> &&hostData,
+         const range<dimensions> &bufferRange, AllocatorT allocator,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T[]>(std::move(hostData)), bufferRange, allocator, propList)
+  {}
+#endif
 
   template <class InputIterator,
             int D = dimensions,
