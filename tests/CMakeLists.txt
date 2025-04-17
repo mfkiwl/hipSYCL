@@ -198,6 +198,7 @@ if(WITH_PCUDA_TESTS)
     pcuda/stream.cpp
     pcuda/event.cpp
     pcuda/atomic.cpp
+    pcuda/interop.cpp
   )
 
   target_compile_options(pcuda_tests PRIVATE --acpp-pcuda)
