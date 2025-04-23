@@ -149,6 +149,8 @@ if(WITH_PSTL_TESTS)
     pstl/copy.cpp
     pstl/copy_if.cpp
     pstl/copy_n.cpp
+    pstl/count.cpp
+    pstl/count_if.cpp
     pstl/exclusive_scan.cpp
     pstl/fill.cpp
     pstl/fill_n.cpp
@@ -196,6 +198,7 @@ if(WITH_PCUDA_TESTS)
     pcuda/stream.cpp
     pcuda/event.cpp
     pcuda/atomic.cpp
+    pcuda/interop.cpp
   )
 
   target_compile_options(pcuda_tests PRIVATE --acpp-pcuda)

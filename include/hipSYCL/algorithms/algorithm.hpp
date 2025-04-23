@@ -577,6 +577,36 @@ sycl::event none_of(sycl::queue &q,
   });
 }
 
+template<class ForwardIt, class T>
+sycl::event count(sycl::queue &q, util::allocation_group &scratch_allocations,
+                  ForwardIt first, ForwardIt last,
+                  typename std::iterator_traits<ForwardIt>::difference_type *out,
+                  const T& value, const std::vector<sycl::event> &deps = {}) {
+
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+  using ValueT = typename std::iterator_traits<ForwardIt>::value_type;
+
+  return transform_reduce(q, scratch_allocations, first, last, out,
+                          DiffT{}, std::plus<>{},
+                          [value](ValueT x) {return (x == value ? 1 : 0);},
+                          deps);
+}
+
+template<class ForwardIt, class UnaryPredicate>
+sycl::event count_if(sycl::queue &q, util::allocation_group &scratch_allocations,
+                  ForwardIt first, ForwardIt last,
+                  typename std::iterator_traits<ForwardIt>::difference_type *out,
+                  UnaryPredicate p, const std::vector<sycl::event> &deps = {}) {
+
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+  using ValueT = typename std::iterator_traits<ForwardIt>::value_type;
+
+  return transform_reduce(q, scratch_allocations, first, last, out,
+                          DiffT{}, std::plus<>{},
+                          [p](ValueT x) {return p(x) ? 1 : 0;},
+                          deps);
+}
+
 template <class RandomIt, class Compare>
 sycl::event sort(sycl::queue &q, RandomIt first, RandomIt last,
                  Compare comp = std::less<>{},
