@@ -147,7 +147,7 @@ HIPSYCL_RT_MAKE_SETTING_TRAIT(setting::jitopt_iads_relative_eviction_threshold, 
 HIPSYCL_RT_MAKE_SETTING_TRAIT(setting::jitopt_iads_relative_threshold_min_data,
                               "jitopt_iads_relative_threshold_min_data",
                               std::size_t)
-HIPSYCL_RT_MAKE_SETTING_TRAIT(setting::enable_allocation_tracking, "enable_allocation_tracking", bool)
+HIPSYCL_RT_MAKE_SETTING_TRAIT(setting::enable_allocation_tracking, "allocation_tracking", bool)
 
 class settings
 {

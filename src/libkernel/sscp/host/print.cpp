@@ -10,8 +10,8 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "hipSYCL/sycl/libkernel/sscp/builtins/print.hpp"
 
-#include <stdio.h>
+#include <cstdio>
 
 void __acpp_sscp_print(const char* msg) {
-  puts(msg);
+  fputs(msg, stdout);
 }

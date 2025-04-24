@@ -17,9 +17,10 @@ nav:
       - 'Macros' : 'macros.md'
       - 'SYCL interoperability' : 'hip-source-interop.md'
       - 'C++ standard parallelism offloading (stdpar)' : 'stdpar.md'
+      - 'Portable CUDA (PCUDA)' : 'pcuda.md'
       - 'AdaptiveCpp parallel algorithms library' : 'algorithms.md'
 
-  - 'AdaptiveCpp design' : 
+  - 'AdaptiveCpp design' :
       - 'Architecture' : 'architecture.md'
       - 'Runtime Specification' : 'runtime-spec.md'
       - 'HCF' : 'hcf.md'
@@ -48,6 +49,21 @@ theme:
   icon:
     repo: fontawesome/brands/github
 
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark theme
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/brightness-7
+        name: Switch to light theme
 
 extra_css:
   - stylesheets/extra.css

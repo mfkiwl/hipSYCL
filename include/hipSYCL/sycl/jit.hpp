@@ -275,11 +275,21 @@ private:
 
 }
 
+#else // IS_DEVICE_PASS_SSCP
 
+// Define at least the namespace so that users can set global aliases
+// for convenience, instead of only being able to define them inside
+// __acpp_if_target_sscp().
+namespace hipsycl::sycl::AdaptiveCpp_jit {}
+
+#endif // IS_DEVICE_PASS_SSCP
+
+// Set jit alias for convenience. If SYCL ever claims this namespace
+// we will have to remove it, so this is not currently publicly advertised.
+// However, it aligns with certain early examples that were published around
+// our JIT capabilities - if users try those, we need this bit.
 namespace hipsycl::sycl::jit {
 using namespace hipsycl::sycl::AdaptiveCpp_jit;
 }
-
-#endif // IS_DEVICE_PASS_SSCP
 
 #endif

@@ -346,6 +346,9 @@ class acpp_config:
       'is-dryrun': option("--acpp-dryrun", "ACPP_DRYRUN", "default-is-dryrun",
 """  If set, only shows compilation commands that would be executed,
   but does not actually execute it. """),
+      'is-dryrun-only-std-flags': option("--acpp-dryrun-only-std-flags", "ACPP_DRYRUN_ONLYSTDFLAGS", "default-is-dryrun-only-std-flags",
+"""  If set, only shows compilation commands that would be executed,
+  but does not actually execute it. This version also remove all non standard flags."""),
       'is-explicit-multipass': option("--acpp-explicit-multipass", "ACPP_EXPLICIT_MULTIPASS",
       "default-is-explicit-multipass",
 """  If set, executes device passes as separate compiler invocation and lets AdaptiveCpp control embedding device
@@ -366,7 +369,13 @@ class acpp_config:
   algorithms will be offloaded unconditionally."""),
       'is-export-all' : option("--acpp-export-all", "ACPP_EXPORT_ALL", "default-export-all",
 """  (Experimental) Treat all functions implicitly as SYCL_EXTERNAL. Only supported with generic target.
-  This currently only works with translation units that include the sycl.hpp header.""")
+  This currently only works with translation units that include the sycl.hpp header."""),
+      'pcuda' : option("--acpp-pcuda", "ACPP_PCUDA", "default-pcuda",
+"""  Enable AdaptiveCpp portable CUDA (PCUDA) support as input language.
+  This is *exclusively* supported with --acpp-targets=generic."""),
+      'pcuda-chevron-launch' : option("--acpp-pcuda-chevron-launch", "ACPP_PCUDA_CHEVRON_LAUNCH", "default-pcuda-chevron-launch",
+"""  Enable AdaptiveCpp portable CUDA (PCUDA) support for triple-chevron kernel launch syntax.
+  Note: This is only meant for convenience, and only supported on a best-effort basis!""")
     }
 
 
@@ -624,6 +633,7 @@ class acpp_config:
     return result
 
   def _get_executable_path(self, path):
+    path = self._substitute_omp_template_string(path)
     normalized_path = shutil.which(path)
     if normalized_path:
       return normalized_path
@@ -649,6 +659,13 @@ class acpp_config:
       self._config_db.get("version-minor"),
       self._config_db.get("version-patch"),
       suffix)
+
+  @property
+  def is_plugin_linked_into_llvm(self):
+    if not self._config_db.contains_key("plugin-linked-into-llvm"):
+      raise OptionNotSet("Could not retrieve whether the plugin is linked into LLVM from config file")
+    return self._interpret_flag(self._config_db.get("plugin-linked-into-llvm"))
+
 
   @property
   def plugin_llvm_version(self):
@@ -734,7 +751,7 @@ class acpp_config:
 
   @property
   def clang_include_path(self):
-    return self._retrieve_option("clang-include-path")
+    return self._substitute_omp_template_string(self._retrieve_option("clang-include-path"))
 
   @property
   def acpp_installation_path(self):
@@ -742,11 +759,13 @@ class acpp_config:
     return os.path.join(acpp_path, "..")
 
   @property
+  def acpp_binary_path(self):
+    return os.path.dirname(os.path.realpath(__file__))
+
+  @property
   def acpp_plugin_path(self):
     if sys.platform.startswith('win32'):
       return os.path.join(self.acpp_installation_path, "bin", "acpp-clang.dll")
-    elif sys.platform == "darwin":
-      return os.path.join(self.acpp_installation_path, "lib", "libacpp-clang.dylib")
     else:
       return os.path.join(self.acpp_installation_path, "lib", "libacpp-clang.so")
 
@@ -802,6 +821,13 @@ class acpp_config:
       return False
 
   @property
+  def is_dryrun_only_std_flags(self):
+    try:
+      return self._is_flag_set("is-dryrun-only-std-flags")
+    except OptionNotSet:
+      return False
+
+  @property
   def use_accelerated_cpu(self):
     try:
       return self._is_flag_set("use-accelerated-cpu")
@@ -846,6 +872,21 @@ class acpp_config:
   @property
   def stdpar_prefetch_mode(self):
     return self._retrieve_option("stdpar-prefetch-mode")
+
+  @property
+  def is_pcuda(self):
+    try:
+      return self._is_flag_set("pcuda")
+    except OptionNotSet:
+      return False
+
+  @property
+  def is_pcuda_chevron_launch(self):
+    try:
+      return self._is_flag_set("pcuda-chevron-launch")
+    except OptionNotSet:
+      return False
+
 
   @property
   def save_temps(self):
@@ -925,10 +966,53 @@ class acpp_config:
   def is_pure_linking_stage(self):
     return len(self.source_file_arguments) == 0
 
-def run_or_print(command, print_only):
+def filter_cmd_args(command, verbose = False):
+  new_cmd = []
+
+  whitelist = [
+    "-I", "-D", "-W", "-std=","-pedantic-errors"
+  ]
+
+  # you can cheat the handling of -I<include> & -I <include> by treating
+  # enable_next first with "-I " as matcher then the other with "-I" matcher
+  whitelist_enable_next = [
+    "-isystem", "-o", "-c", "-I "
+  ]
+
+  add_next_arg = True # to add clang call
+  for arg in command:
+    if add_next_arg:
+      new_cmd.append(arg)
+      add_next_arg = False
+      continue
+
+    for w in whitelist_enable_next:
+      if arg.startswith(w):
+        new_cmd.append(arg)
+        add_next_arg = True
+        continue
+
+    for w in whitelist:
+      if arg.startswith(w):
+        new_cmd.append(arg)
+        add_next_arg = False
+        continue
+
+  if verbose:
+    for arg in command:
+      if not arg in new_cmd:
+        print("removed :",arg)
+
+  return new_cmd
+
+
+def run_or_print(command, print_only, only_std_flags=False):
+
   if not print_only:
     return subprocess.call(command)
   else:
+    if(only_std_flags):
+      command = filter_cmd_args(command,verbose=False)
     print(' '.join(command))
     return 0
 
@@ -1003,7 +1087,6 @@ class cuda_multipass_invocation:
         "-x", "cuda",
         "-D__ACPP_ENABLE_CUDA_TARGET__",
         "-D__ACPP_CLANG__",
-        "-fplugin=" + self._config.acpp_plugin_path,
         "--cuda-path=" + self._config.cuda_path,
         "--cuda-device-only",
         "--cuda-gpu-arch=" + target,
@@ -1014,8 +1097,10 @@ class cuda_multipass_invocation:
     if self._host_compiler != self._config.clang_path:
       flags += ["-D__ACPP_SPLIT_COMPILER__"]
 
-    if not sys.platform.startswith("win32"):
-      flags += ["-fpass-plugin=" + self._config.acpp_plugin_path]
+    if not self._config.is_plugin_linked_into_llvm:
+      flags += ["-fplugin=" + self._config.acpp_plugin_path]
+      if not sys.platform.startswith("win32"):
+        flags += ["-fpass-plugin=" + self._config.acpp_plugin_path]
     return flags
 
   # CXX flags for main pass
@@ -1130,7 +1215,6 @@ class hip_multipass_invocation:
         "-x", "hip",
         "-D__ACPP_ENABLE_HIP_TARGET__",
         "-D__ACPP_CLANG__",
-        "-fplugin=" + self._config.acpp_plugin_path,
         "--cuda-device-only",
         "--cuda-gpu-arch=" + target,
         "-c","-o",self._explicit_pass_output_file(target)
@@ -1139,8 +1223,10 @@ class hip_multipass_invocation:
     if self._host_compiler != self._config.clang_path:
       flags += ["-D__ACPP_SPLIT_COMPILER__"]
 
-    if not sys.platform.startswith("win32"):
-      flags += ["-fpass-plugin=" + self._config.acpp_plugin_path]
+    if not self._config.is_plugin_linked_into_llvm:
+      flags += ["-fplugin=" + self._config.acpp_plugin_path]
+      if not sys.platform.startswith("win32"):
+        flags += ["-fpass-plugin=" + self._config.acpp_plugin_path]
     return flags
 
   # CXX flags for main pass
@@ -1207,9 +1293,9 @@ class cuda_invocation:
     self._cuda_targets = target_list
     self._cuda_path = config.cuda_path
     self._clang = config.clang_path
-    self._acpp_plugin_path = config.acpp_plugin_path
     self._linker_args = config.cuda_link_line
     self._cxx_flags = config.cuda_cxx_flags
+    self._config = config
 
   def get_compiler_preference(self):
     return (self._clang, 100)
@@ -1228,7 +1314,6 @@ class cuda_invocation:
         "-x", "cuda",
         "--cuda-path=" + self._cuda_path,
         "-D__ACPP_ENABLE_CUDA_TARGET__",
-        "-fplugin=" + self._acpp_plugin_path,
         "-D__ACPP_CLANG__"
       ]
 
@@ -1236,8 +1321,10 @@ class cuda_invocation:
     for t in self._cuda_targets:
       flags += ["--cuda-gpu-arch=" + t]
 
-    if not sys.platform.startswith("win32"):
-      flags += ["-fpass-plugin=" + self._acpp_plugin_path]
+    if not self._config.is_plugin_linked_into_llvm:
+      flags += ["-fplugin=" + self._config.acpp_plugin_path]
+      if not sys.platform.startswith("win32"):
+        flags += ["-fpass-plugin=" + self._config.acpp_plugin_path]
 
     return flags
 
@@ -1318,8 +1405,7 @@ class hip_invocation:
     self._clang = config.clang_path
     self._linker_args = config.rocm_link_line
     self._cxx_flags = config.rocm_cxx_flags
-    self._clang_include_path = config.clang_include_path
-    self._acpp_plugin_path = config.acpp_plugin_path
+    self._config = config
 
   def get_compiler_preference(self):
     return (self._clang, 100)
@@ -1337,15 +1423,17 @@ class hip_invocation:
     flags += [
         "-x", "hip",
         "-D__ACPP_ENABLE_HIP_TARGET__",
-        "-fplugin=" + self._acpp_plugin_path,
         "-D__ACPP_CLANG__"
       ]
 
     for t in self._hip_targets:
       flags += ["--cuda-gpu-arch=" + t]
 
-    if not sys.platform.startswith("win32"):
-      flags += ["-fpass-plugin=" + self._acpp_plugin_path]
+
+    if not self._config.is_plugin_linked_into_llvm:
+      flags += ["-fplugin=" + self._config.acpp_plugin_path]
+      if not sys.platform.startswith("win32"):
+        flags += ["-fpass-plugin=" + self._config.acpp_plugin_path]
 
     return flags
 
@@ -1421,6 +1509,7 @@ class omp_accelerated_invocation:
       raise RuntimeError("Trying to use accelerated CPU variant, but plugin was built without support for it")
 
     self._clang_path = config.clang_path
+    self._config = config
 
   def get_compiler_preference(self):
     return (self._clang_path, 10)
@@ -1435,12 +1524,16 @@ class omp_accelerated_invocation:
 
   def get_cxx_flags(self):
     flags = ["-D__ACPP_ENABLE_OMPHOST_TARGET__"]
-    if not sys.platform.startswith("win32"):
+    if not (self._config.is_plugin_linked_into_llvm or sys.platform.startswith("win32")):
       flags += [
-        "-fplugin=" + config.acpp_plugin_path
-        , "-fpass-plugin=" + config.acpp_plugin_path
-        , "-D__ACPP_USE_ACCELERATED_CPU__"
+        "-fplugin=" + self._config.acpp_plugin_path
+        , "-fpass-plugin=" + self._config.acpp_plugin_path
       ]
+    if self._config.is_plugin_linked_into_llvm or not sys.platform.startswith("win32"):
+      flags += ["-D__ACPP_USE_ACCELERATED_CPU__"]
+    if self._config.is_plugin_linked_into_llvm:
+      flags += ["-mllvm", "-acpp-cbs"]
+    
     flags += self._cxx_flags
 
     return flags
@@ -1543,7 +1636,7 @@ class llvm_sscp_invocation:
     if len(sscp_compile_opts) > 0:
       flags += ["-mllvm", "-acpp-sscp-kernel-opts="+ ",".join(sscp_compile_opts)]
 
-    if not sys.platform.startswith("win32"):
+    if not (self._config.is_plugin_linked_into_llvm or sys.platform.startswith("win32")):
       flags += [
         "-fplugin=" + self._config.acpp_plugin_path
         , "-fpass-plugin=" + self._config.acpp_plugin_path
@@ -1559,10 +1652,12 @@ class llvm_sscp_invocation:
 
 class compiler:
   def __init__(self, config):
+    self._config = config
     self._user_args = config.forwarded_compiler_arguments
     self._requires_linking = config.contains_linking_stage()
     self._requires_compilation = not config.is_pure_linking_stage()
-    self._is_dry_run = config.is_dryrun
+    self._is_dry_run = config.is_dryrun or config.is_dryrun_only_std_flags
+    self._only_std_flags = config.is_dryrun_only_std_flags
     self._targets = config.targets
     self._common_compiler_args = config.common_compiler_args
     self._acpp_path = config.acpp_installation_path
@@ -1574,7 +1669,9 @@ class compiler:
     self._is_stdpar = config.is_stdpar
     self._is_stdpar_system_usm = config.is_stdpar_system_usm
     self._is_stdpar_unconditional_offload = config.is_stdpar_unconditional_offload
+    self._is_pcuda = config.is_pcuda
     self._clang_opt_args = config.default_clang_optimization_args
+    self._acpp_pcuda_pp_path = os.path.join(config.acpp_binary_path, "acpp-pcuda-pp")
     try:
       self._clang_path = config.clang_path
     except OptionNotSet:
@@ -1591,6 +1688,8 @@ class compiler:
                       "simultaneously in non-explicit multipass; enabling explicit "
                       "multipass compilation.")
         self._is_explicit_multipass = True
+    if self._is_pcuda and "generic" not in self._targets:
+      raise RuntimeError("PCUDA support requires generic target.")
 
     self._backends = []
     self._multipass_backends = []
@@ -1761,6 +1860,21 @@ class compiler:
     if sys.platform.startswith("win32"):
       args += ["-D_USE_MATH_DEFINES"]
 
+    if self._is_pcuda:
+      args_prologue = [
+        "-isystem", os.path.join(self._acpp_include_path, "hipSYCL", "pcuda"),
+        "-D__ACPP_PCUDA__", 
+        "-mllvm", "-acpp-sscp-pcuda",
+        "-fdeclspec"
+      ]
+      force_cpp_language = False
+      for s in self._config.source_file_arguments:
+        if s.endswith(".cu"):
+          force_cpp_language = True
+      if force_cpp_language:
+        args_prologue += ["-x","c++"]
+      args = args_prologue + args
+
     if self._is_stdpar:
       stdpar_include_path = os.path.join(self._acpp_include_path,"hipSYCL","std","stdpar")
       args += [
@@ -1836,6 +1950,55 @@ class compiler:
     if not self._is_dry_run:
       multipass_backend.create_code_objects(targets)
 
+
+  # Returns list of modified arguments
+  def _preprocess_pcuda_sources(self, compiler_executable, args, tempdir):
+    source_args = self._config.source_file_arguments
+
+    consume_next = False
+    
+    preprocessor_invocation_args = []
+    for arg in args:
+      if consume_next:
+        preprocessor_invocation_args.append(arg)
+        consume_next = False
+      else:
+        consuming_flags = ["-isystem", "-I", "-D", "-Xclang", "-include"]
+        single_arg_flag_starts = ["-I", "-D", "-std=", "-f"]
+
+        if arg in consuming_flags:
+          preprocessor_invocation_args.append(arg)
+          consume_next = True
+        elif any(arg.startswith(x) for x in single_arg_flag_starts):
+          preprocessor_invocation_args.append(arg)
+    
+    pcuda_pp_app = os.path.join(self._acpp_pcuda_pp_path)
+    file_replacement_map = {}
+
+    for i,s in enumerate(source_args):
+      # Invoke clang -E
+      preprocessed_infile = os.path.join(tempdir, "acpp-preprocessed{}.cpp".format(i))
+      ret_val = run_or_print([self._clang_path, "-E", "-o", preprocessed_infile, "-x", "c++", s]+preprocessor_invocation_args, self._is_dry_run)
+      if ret_val != 0:
+        raise RuntimeError("clang -E invocation failed with error code " + str(ret_val))
+
+      # Run acpp-pcuda-pp
+      outfile = os.path.join(tempdir, "acpp-pcuda-pp-{}.cpp".format(i))
+      ret_val = run_or_print([pcuda_pp_app, preprocessed_infile, outfile], self._is_dry_run)
+      if ret_val != 0:
+        raise RuntimeError("acpp-pcuda-pp invocation failed with error code " + str(ret_val))
+      
+      file_replacement_map[s] = outfile
+
+    result_args = []
+    for arg in args:
+      if arg in file_replacement_map:
+        result_args.append(file_replacement_map[arg])
+      else:
+        result_args.append(arg)
+    
+    return result_args
+
   def _select_compiler(self):
     compiler_executable, compiler_priority = ("", 0)
 
@@ -1895,8 +2058,14 @@ class compiler:
     if self._requires_linking:
       args += ld_flags
 
-    return run_or_print([compiler_executable] + args,
-                        self._is_dry_run)
+    if self._is_pcuda and self._config.is_pcuda_chevron_launch:
+      with tempfile.TemporaryDirectory(prefix="adaptivecpp-") as temp_dir:
+        modified_args = self._preprocess_pcuda_sources(compiler_executable, args, temp_dir)
+        return run_or_print([compiler_executable] + modified_args,
+                        self._is_dry_run, self._only_std_flags)
+    else:
+      return run_or_print([compiler_executable] + args,
+                        self._is_dry_run, self._only_std_flags)
 
   def run(self):
     temp_prefix = "adaptivecpp-"
@@ -1922,7 +2091,7 @@ def print_config(config):
 
 def print_version(config):
   version = config.version
-  print("acpp [AdaptiveCpp compilation driver], Copyright (C) 2018-2024 Aksel Alpay and the AdaptiveCpp project")
+  print("acpp [AdaptiveCpp compilation driver], Copyright (C) 2018-2025 Aksel Alpay and the AdaptiveCpp project")
   print("  AdaptiveCpp version: {}.{}.{}{}".format(version[0],version[1],version[2],version[3]))
   print("  Installation root:",os.path.abspath(config.acpp_installation_path))
   if config.has_plugin:

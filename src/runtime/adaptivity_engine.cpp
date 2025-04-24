@@ -165,13 +165,13 @@ int determine_ptr_alignment(uint64_t ptrval) {
   // do not support __has_builtin
   #define ACPP_HAS_BUILTIN_CTZ
 #else
-  #if __has_builtin(__builtin_ctz)
+  #if __has_builtin(__builtin_ctzll)
     #define ACPP_HAS_BUILTIN_CTZ
   #endif
 #endif
 
 #ifdef ACPP_HAS_BUILTIN_CTZ
-  uint64_t alignment = 1ull << __builtin_ctz(ptrval);
+  uint64_t alignment = 1ull << __builtin_ctzll(ptrval);
   return alignment >= 32 ? 32 : 0;
 #else
   return 0;
@@ -264,6 +264,7 @@ kernel_adaptivity_engine::finalize_binary_configuration(
         uint64_t buffer = 0;
         std::memcpy(&buffer, _arg_mapper.get_mapped_args()[i],
                     _kernel_info->get_argument_size(i));
+
         int alignment = determine_ptr_alignment(buffer);
         if(alignment > 0) {
           HIPSYCL_DEBUG_INFO

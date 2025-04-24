@@ -431,11 +431,11 @@ ocl_hardware_manager *ocl_queue::get_hardware_manager() const {
 }
 
 result ocl_queue::submit_sscp_kernel_from_code_object(
-    const kernel_operation &op, hcf_object_id hcf_object,
-    std::string_view kernel_name, const rt::hcf_kernel_info *kernel_info,
-    const rt::range<3> &num_groups, const rt::range<3> &group_size,
-    unsigned local_mem_size, void **args, std::size_t *arg_sizes,
-    std::size_t num_args, const kernel_configuration &initial_config) {
+    hcf_object_id hcf_object, std::string_view kernel_name,
+    const rt::hcf_kernel_info *kernel_info, const rt::range<3> &num_groups,
+    const rt::range<3> &group_size, unsigned local_mem_size, void **args,
+    std::size_t *arg_sizes, std::size_t num_args,
+    const kernel_configuration &initial_config) {
 
 #ifdef HIPSYCL_WITH_SSCP_COMPILER
 
@@ -484,10 +484,17 @@ result ocl_queue::submit_sscp_kernel_from_code_object(
   _config.set_build_option(
       kernel_build_option::spirv_dynamic_local_mem_allocation_size,
       local_mem_size);
-  if(hw_ctx->has_intel_extension_profile()) {
-    _config.set_build_flag(
-      kernel_build_flag::spirv_enable_intel_llvm_spirv_options);
-  }
+  
+  // Not all OpenCL implementations support these extensions,
+  // however if user code doesn't need them, then the compiler should in theory
+  // not generate code that requires them. This should allow us to
+  // run on all devices that *can* support this particular kernel.
+  //
+  // We may have to revisit this handling if there are any issues reported
+  // with OpenCL implementations that are not from Intel.
+  _config.set_build_flag(
+    kernel_build_flag::spirv_enable_intel_llvm_spirv_options);
+
 
   // TODO: Enable this if we are on Intel
   // config.set_build_flag(kernel_build_flag::spirv_enable_intel_llvm_spirv_options);

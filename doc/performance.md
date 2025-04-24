@@ -89,7 +89,7 @@ This optimization process is complete when the following warning is no longer pr
 
 The extent of this can be controlled using the environment variable `ACPP_ADAPTIVITY_LEVEL`. A value of 0 disables the feature. The default is 1. Higher levels are expected to result in higher peak performance, but may require more application runs to converge to this performance. The default level of 1 usually guarantees peak performance for the second application run.
 
-Setting `ACPP_ENABLE_ALLOCATION_TRACKING=1` enables additional optimizations at adaptivity level 1.
+Setting `ACPP_ALLOCATION_TRACKING=1` enables additional optimizations at adaptivity level 1.
 
 At adaptivity level >= 2, AdaptiveCpp will enable additional, aggressive optimizations.
 In particular, AdaptiveCpp will attempt to detect invariant kernel arguments, and hardwire those as constants during JIT time. In some cases, this can result in substantial performance increases. It is thus advisable to try setting `ACPP_ADAPTIVITY_LEVEL=2` and running the application a couple of times (typically 3-4 times).
@@ -100,7 +100,7 @@ Note: Applications that are highly latency-sensitive may notice a slightly incre
 
 We recommend:
 * Experiment with `ACPP_ADAPTIVITY_LEVEL=1` and `ACPP_ADAPTIVITY_LEVEL=2`
-* Experiment with `ACPP_ENABLE_ALLOCATION_TRACKING=1` and `ACPP_ENABLE_ALLOCATION_TRACKING=0`.
+* Experiment with `ACPP_ALLOCATION_TRACKING=1` and `ACPP_ALLOCATION_TRACKING=0`.
 
 *Note: Adaptivity levels higher than 2 are currently not implemented.*
 
@@ -117,6 +117,7 @@ Clearing the cache can be accomplished by simply clearing the cache directory, e
 * When comparing CPU performance to icpx/DPC++, please note that DPC++ relies on either the Intel CPU OpenCL implementation or oneAPI construction kit to target CPUs. AdaptiveCpp can target CPUs either through OpenMP, or through OpenCL. In the latter case, it can use exactly the same OpenCL implementations that DPC++ uses for CPUs as well. So, if you notice that DPC++ performs better on CPU in some scenario, it might be a good idea to try the Intel OpenCL CPU implementation or the oneAPI construction kit with AdaptiveCpp! Drawing e.g. the conclusion that DPC++ is faster than AdaptiveCpp on CPU but only testing AdaptiveCpp's OpenMP backend is *not* correct reasoning!
 * When targeting the Intel OpenCL CPU implementation, you might also want to take into account [Intel's vectorizer tuning knobs](https://www.intel.com/content/www/us/en/docs/opencl-sdk/developer-guide-core-xeon/2018/vectorizer-knobs.html).
 * For the OpenMP backend, enable OpenMP thread pinning (e.g. `OMP_PROC_BIND=true`). AdaptiveCpp uses asynchronous worker threads for some light-weight tasks such as garbage collection, and these additional threads can interfere with kernel execution if OpenMP threads are not bound to cores.
+* In multi-socket systems or other systems with strong NUMA behavior we recommend running one AdaptiveCpp process per socket (or NUMA domain) and using e.g. MPI to exchange data between the processes. This is because the SYCL implementations for data transfer functionality (`queue::memcpy` etc) for the OpenMP backend are currently not NUMA-aware. If your code depends on fast data transfers, you might run into NUMA issues otherwise. If you don't have performance critical data transfers in your code, this might not matter. Alternatively, on the CPU backend you can always use kernels to copy data which is always expected to deliver good performance.
 
 ### With omp.* compilation flow
 * When using `OMP_PROC_BIND`, there have been observations that performance suffers substantially, if AdaptiveCpp's OpenMP backend has been compiled against a different OpenMP implementation than the one used by `acpp` under the hood. For example, if `omp.accelerated` is used, `acpp` relies on clang and typically LLVM `libomp`, while the AdaptiveCpp runtime library may have been compiled with gcc and `libgomp`. The easiest way to resolve this is to appropriately use `cmake -DCMAKE_CXX_COMPILER=...` when building AdaptiveCpp to ensure that it is built using the same compiler. **If you observe substantial performance differences between AdaptiveCpp and native OpenMP, chances are your setup is broken.**

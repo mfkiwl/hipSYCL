@@ -254,6 +254,34 @@ sycl::event copy_n(sycl::queue &q, ForwardIt1 first, Size count,
   return copy(q, first, last, result, deps);
 }
 
+template <class ForwardIt1, class ForwardIt2>
+sycl::event move(sycl::queue &q, ForwardIt1 first, ForwardIt1 last,
+                 ForwardIt2 d_first, const std::vector<sycl::event> &deps = {}) {
+
+  auto size = std::distance(first, last);
+  if (size == 0)
+    return sycl::event{};
+
+  using value_type1 = typename std::iterator_traits<ForwardIt1>::value_type;
+  using value_type2 = typename std::iterator_traits<ForwardIt2>::value_type;
+
+  if (std::is_trivially_copyable_v<value_type1> &&
+      std::is_same_v<value_type1, value_type2> &&
+      util::is_contiguous<ForwardIt1>() && util::is_contiguous<ForwardIt2>() &&
+      detail::should_use_memcpy(q.get_device())) {
+    return q.memcpy(&(*d_first), &(*first), size * sizeof(value_type1), deps);
+  } else {
+    return q.parallel_for(sycl::range{size}, deps,
+                          [=](sycl::id<1> id) {
+                            auto input = first;
+                            auto output = d_first;
+                            std::advance(input, id[0]);
+                            std::advance(output, id[0]);
+                            *output = std::move(*input);
+                          });
+  }
+}
+
 template <class ForwardIt, class T>
 sycl::event fill(sycl::queue &q, ForwardIt first, ForwardIt last,
                  const T &value, const std::vector<sycl::event> &deps = {}) {
@@ -381,6 +409,40 @@ sycl::event replace_copy(sycl::queue &q, ForwardIt1 first, ForwardIt1 last,
   return replace_copy_if(
       q, first, last, d_first, [=](const auto &x) { return x == old_value; },
       new_value, deps);
+}
+
+template <class BidirIt>
+sycl::event reverse(sycl::queue &q, BidirIt first, BidirIt last,
+                     const std::vector<sycl::event> &deps = {}) {
+  auto size = std::distance(first, last);
+  if (first == last || size == 1)
+    return sycl::event{};
+
+  return q.parallel_for(sycl::range{size/2}, deps,
+                        [=](sycl::id<1> id) {
+                          auto offset = size - id[0] - 1;
+                          auto input = std::next(first, id[0]);
+                          auto output = std::next(first, offset);
+                          std::iter_swap(input, output);
+                        });
+}
+
+template <class BidirIt, class ForwardIt>
+sycl::event reverse_copy(sycl::queue &q, BidirIt first,
+                         BidirIt last, ForwardIt d_first,
+                         const std::vector<sycl::event> &deps = {}) {
+  if (first == last)
+    return sycl::event{};
+
+  auto size = std::distance(first, last);
+
+  return q.parallel_for(sycl::range{size}, deps,
+                        [=](sycl::id<1> id) {
+                          auto offset = size - id[0] - 1;
+                          auto input = std::next(first, offset);
+                          auto output = std::next(d_first, id[0]);
+                          *output = *input;
+                        });
 }
 
 // Need transform_reduce functionality for find etc, so forward
@@ -513,6 +575,36 @@ sycl::event none_of(sycl::queue &q,
   return q.single_task(evt, [=](){
     *out = static_cast<detail::early_exit_flag_t>(!(*out));
   });
+}
+
+template<class ForwardIt, class T>
+sycl::event count(sycl::queue &q, util::allocation_group &scratch_allocations,
+                  ForwardIt first, ForwardIt last,
+                  typename std::iterator_traits<ForwardIt>::difference_type *out,
+                  const T& value, const std::vector<sycl::event> &deps = {}) {
+
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+  using ValueT = typename std::iterator_traits<ForwardIt>::value_type;
+
+  return transform_reduce(q, scratch_allocations, first, last, out,
+                          DiffT{}, std::plus<>{},
+                          [value](ValueT x) {return (x == value ? 1 : 0);},
+                          deps);
+}
+
+template<class ForwardIt, class UnaryPredicate>
+sycl::event count_if(sycl::queue &q, util::allocation_group &scratch_allocations,
+                  ForwardIt first, ForwardIt last,
+                  typename std::iterator_traits<ForwardIt>::difference_type *out,
+                  UnaryPredicate p, const std::vector<sycl::event> &deps = {}) {
+
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+  using ValueT = typename std::iterator_traits<ForwardIt>::value_type;
+
+  return transform_reduce(q, scratch_allocations, first, last, out,
+                          DiffT{}, std::plus<>{},
+                          [p](ValueT x) {return p(x) ? 1 : 0;},
+                          deps);
 }
 
 template <class RandomIt, class Compare>

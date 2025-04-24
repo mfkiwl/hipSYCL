@@ -241,7 +241,11 @@ inline rt::result compile(compiler::LLVMToBackendTranslator *translator,
   if(translator->getKernels().size() == 1) {
     // Currently we only can specialize kernel arguments for the 
     // single-kernel code object model
+    HIPSYCL_DEBUG_INFO << "jit: Configuring kernel "
+                       << translator->getKernels()[0] << std::endl;
     for(const auto& entry : config.specialized_arguments()) {
+      HIPSYCL_DEBUG_INFO << "jit: Specializing argument " << entry.first
+                         << " = " << entry.second << std::endl;
       translator->specializeKernelArgument(translator->getKernels().front(),
                                           entry.first, &entry.second);
     }
@@ -249,10 +253,14 @@ inline rt::result compile(compiler::LLVMToBackendTranslator *translator,
     int num_param_indices = static_cast<int>(config.get_num_kernel_param_indices());
     for (int i = 0; i < num_param_indices; ++i) {
       if (config.has_kernel_param_flag(i, rt::kernel_param_flag::noalias)) {
+        HIPSYCL_DEBUG_INFO << "jit: Setting argument " << i << " to noalias"
+                           << std::endl;
         translator->setNoAliasKernelParam(translator->getKernels().front(), i);
       }
     }
     for(const auto& entry : config.known_alignments()) {
+      HIPSYCL_DEBUG_INFO << "jit: Setting argument " << entry.first
+                         << " to alignment " << entry.second << std::endl;
       translator->setKnownPtrParamAlignment(translator->getKernels().front(),
                                             entry.first, entry.second);
     }
@@ -260,6 +268,8 @@ inline rt::result compile(compiler::LLVMToBackendTranslator *translator,
   for(const auto& entry : config.function_call_specialization_config()) {
     auto& config = entry.value->function_call_map;
     for(const auto& call_specialization : config) {
+      HIPSYCL_DEBUG_INFO << "jit: Specializing function call to "
+                         << call_specialization.first << std::endl;
       translator->specializeFunctionCalls(call_specialization.first,
                                           call_specialization.second, false);
     }
