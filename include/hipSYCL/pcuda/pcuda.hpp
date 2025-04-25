@@ -29,7 +29,17 @@
 #include "pcuda_runtime.hpp"
 
 #ifndef __device__
-#define __device__ __attribute__((annotate("hipsycl_sscp_outlining")))
+// Ideally, we could set __device__ to 
+// __attribute__((annotate("hipsycl_sscp_outlining"))).
+// However, clang is not fully compatible with GCC with the placement
+// of GNU-style attributes on lambda functions, leading to incompatibilities
+// with nvcc code.
+// This is unfortunate since we would need __device__ e.g. for 
+// cross-TU linking of device functions similarly to SYCL_EXTERNAL.
+// For now users will have to use --acpp-export-all, which might however be overkill.
+// Also, it might be insufficient if we later decide to add support
+// for virtual functions or function pointers.
+#define __device__
 #endif
 
 #ifndef __host__
