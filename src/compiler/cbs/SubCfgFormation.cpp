@@ -92,7 +92,7 @@ llvm::LoadInst *mergeGVLoadsInEntry(llvm::Function &F, llvm::StringRef VarName) 
 }
 
 // parses the range dimensionality from the mangled kernel name
-std::size_t getRangeDim(llvm::Function &F) {
+std::size_t getRangeDim(llvm::Function &F, bool IsSscp) {
   auto FName = F.getName();
   // todo: fix with MS mangling
   llvm::Regex Rgx("iterate_nd_range_ompILi([1-3])E");
@@ -100,19 +100,40 @@ std::size_t getRangeDim(llvm::Function &F) {
   if (Rgx.match(FName, &Matches))
     return std::stoull(static_cast<std::string>(Matches[1]));
 
-  if (auto MD = F.getParent()->getNamedMetadata(SscpAnnotationsName)) {
+  auto GetValue = [](llvm::Constant *Const) -> std::size_t {
+    if (auto CI = llvm::dyn_cast<llvm::ConstantInt>(Const))
+      return CI->getZExtValue();
+    if (auto ZI = llvm::dyn_cast<llvm::ConstantAggregateZero>(Const))
+      return 0;
+    if (auto CS = llvm::dyn_cast<llvm::ConstantAggregate>(Const)) {
+      return llvm::cast<llvm::ConstantInt>(CS->getOperand(0))->getZExtValue();
+    }
+    llvm_unreachable("[SubCFG] Could not interpret kernel dimensionality value!");
+  };
+
+  if (!IsSscp) {
+    std::size_t Dim = 0;
+    utils::findFunctionsWithStringAnnotationsWithArg(*F.getParent(), [&](llvm::Function *AnnotF,
+                                                                         llvm::StringRef Annotation,
+                                                                         llvm::Constant *Argument) {
+      if (AnnotF == &F) {
+        if (Annotation.compare(CbsKernelDimensionName) == 0) {
+          if (auto GV = llvm::dyn_cast<llvm::GlobalVariable>(Argument)){
+            Dim = GetValue(GV->getInitializer());
+          } else
+            Dim = GetValue(Argument);
+        }
+      }
+    });
+    return Dim;
+  } else if (auto MD = F.getParent()->getNamedMetadata(SscpAnnotationsName)) {
     for (auto OP : MD->operands()) {
       if (OP->getNumOperands() == 3 &&
           llvm::cast<llvm::MDString>(OP->getOperand(1))->getString() == SscpKernelDimensionName) {
         if (&F == llvm::dyn_cast<llvm::Function>(
                       llvm::cast<llvm::ValueAsMetadata>(OP->getOperand(0))->getValue())) {
           auto ConstMD = llvm::cast<llvm::ConstantAsMetadata>(OP->getOperand(2))->getValue();
-          if (auto CI = llvm::dyn_cast<llvm::ConstantInt>(ConstMD))
-            return CI->getZExtValue();
-          if (auto ZI = llvm::dyn_cast<llvm::ConstantAggregateZero>(ConstMD))
-            return 0;
-          if (auto CS = llvm::dyn_cast<llvm::ConstantStruct>(ConstMD))
-            return llvm::cast<llvm::ConstantInt>(CS->getOperand(0))->getZExtValue();
+          return GetValue(ConstMD);
         }
       }
     }
@@ -158,18 +179,23 @@ getLocalSizeArgumentFromAnnotation(llvm::Function &F) {
 }
 
 // identify the local size values by the store to it
-void fillStores(llvm::Value *V, int Idx, llvm::SmallVector<llvm::Value *, 3> &LocalSize) {
+void fillStores(llvm::Value *V, int Idx, bool IsIdxBytewise,
+                llvm::SmallVector<llvm::Value *, 3> &LocalSize) {
   if (auto *Store = llvm::dyn_cast<llvm::StoreInst>(V)) {
+#if LLVM_VERSION_MAJOR >= 17
+    if (IsIdxBytewise)
+      Idx /= Store->getAccessType()->getScalarSizeInBits() / 8;
+#endif
     LocalSize[Idx] = Store->getOperand(0);
   } else if (auto *BC = llvm::dyn_cast<llvm::BitCastInst>(V)) {
     for (auto *BCU : BC->users()) {
-      fillStores(BCU, Idx, LocalSize);
+      fillStores(BCU, Idx, IsIdxBytewise, LocalSize);
     }
   } else if (auto *GEP = llvm::dyn_cast<llvm::GetElementPtrInst>(V)) {
     auto *IdxV = GEP->indices().begin() + (GEP->getNumIndices() - 1);
     auto *IdxC = llvm::cast<llvm::ConstantInt>(IdxV);
     for (auto *GU : GEP->users()) {
-      fillStores(GU, IdxC->getSExtValue(), LocalSize);
+      fillStores(GU, IdxC->getSExtValue(), GEP->getSourceElementType()->isIntegerTy(8), LocalSize);
     }
   }
 }
@@ -230,7 +256,7 @@ llvm::SmallVector<llvm::Value *, 3> getLocalSizeValues(llvm::Function &F, int Di
 
   if (!llvm::dyn_cast<llvm::Argument>(LocalSizeArg))
     for (auto *U : LocalSizeArg->users())
-      fillStores(U, 0, LocalSize);
+      fillStores(U, 0, false, LocalSize);
   else
     loadSizeValuesFromArgument(F, Dim, LocalSizeArg, DL, LocalSize, false);
 
@@ -1075,24 +1101,58 @@ void purgeLifetime(SubCFG &Cfg) {
     I->eraseFromParent();
 }
 
+// look through geps and bitcasts to find the alloca
+llvm::AllocaInst *getAllocaFromGEP(llvm::Value *V) {
+  if (auto *GEP = llvm::dyn_cast<llvm::GetElementPtrInst>(V))
+    return getAllocaFromGEP(GEP->getPointerOperand());
+  if (auto *BC = llvm::dyn_cast<llvm::BitCastInst>(V))
+    return getAllocaFromGEP(BC->getOperand(0));
+  if (auto *AI = llvm::dyn_cast<llvm::AllocaInst>(V))
+    return AI;
+  return nullptr;
+}
+
 // fills \a Hull with all transitive users of \a Alloca
-void fillUserHull(llvm::AllocaInst *Alloca, llvm::SmallVectorImpl<llvm::Instruction *> &Hull) {
+// returns true, if address is captured by a function
+bool fillUserHull(llvm::AllocaInst *Alloca, llvm::SmallVectorImpl<llvm::Instruction *> &Hull) {
   llvm::SmallVector<llvm::Instruction *, 8> WL;
-  std::transform(Alloca->user_begin(), Alloca->user_end(), std::back_inserter(WL),
-                 [](auto *U) { return llvm::cast<llvm::Instruction>(U); });
+  WL.push_back(Alloca);
+
   llvm::SmallPtrSet<llvm::Instruction *, 32> AlreadySeen;
   while (!WL.empty()) {
     auto *I = WL.pop_back_val();
     AlreadySeen.insert(I);
-    Hull.push_back(I);
-    for (auto *U : I->users()) {
-      if (auto *UI = llvm::dyn_cast<llvm::Instruction>(U)) {
-        if (!AlreadySeen.contains(UI))
+    if (!I->getParent()->isEntryBlock())
+      Hull.push_back(I);
+
+    for (auto &U : I->uses()) {
+      if (auto *UI = llvm::dyn_cast<llvm::Instruction>(U.getUser())) {
+        if (!AlreadySeen.contains(UI)) {
+          if (auto SI = llvm::dyn_cast<llvm::StoreInst>(UI)) {
+            if (auto *StoredToAlloca = getAllocaFromGEP(SI->getPointerOperand());
+                StoredToAlloca && AlreadySeen.insert(StoredToAlloca).second) {
+              HIPSYCL_DEBUG_INFO << "[SubCFG] Found alloca " << *StoredToAlloca
+                                 << " in store: " << *SI << "\n";
+              WL.push_back(StoredToAlloca);
+              continue;
+            }
+          }
           if (UI->mayReadOrWriteMemory() || UI->getType()->isPointerTy())
             WL.push_back(UI);
+          if (auto CI = llvm::dyn_cast<llvm::CallBase>(UI)) {
+            auto OperandNo = U.getOperandNo();
+            if (!CI->dataOperandHasImpliedAttr(OperandNo, llvm::Attribute::NoCapture) &&
+                !CI->dataOperandHasImpliedAttr(OperandNo, llvm::Attribute::StructRet)) {
+              HIPSYCL_DEBUG_INFO << "[SubCFG] Found function call that captures " << *I << ": "
+                                 << *CI << " OperandNo: " << OperandNo << "\n";
+              return true;
+            }
+          }
+        }
       }
     }
   }
+  return false;
 }
 
 // checks if all uses of an alloca are in just a single subcfg (doesn't have to be arrayified!)
@@ -1101,7 +1161,8 @@ bool isAllocaSubCfgInternal(llvm::AllocaInst *Alloca, const std::vector<SubCFG> 
   llvm::SmallPtrSet<llvm::BasicBlock *, 16> UserBlocks;
   {
     llvm::SmallVector<llvm::Instruction *, 32> Users;
-    fillUserHull(Alloca, Users);
+    if (fillUserHull(Alloca, Users))
+      return false; // alloca use captured by function.. unclear what the function may do with it.
     utils::PtrSetWrapper<decltype(UserBlocks)> Wrapper{UserBlocks};
     std::transform(Users.begin(), Users.end(), std::inserter(Wrapper, UserBlocks.end()),
                    [](auto *I) { return I->getParent(); });
@@ -1125,6 +1186,15 @@ bool isAllocaSubCfgInternal(llvm::AllocaInst *Alloca, const std::vector<SubCFG> 
   }
 
   return true;
+}
+
+template <class Instruction>
+llvm::IRBuilder<> createLoadBuilder(llvm::BasicBlock *BB, Instruction *I) {
+  return llvm::IRBuilder{BB, I->getIterator()};
+}
+
+template <class iterator> llvm::IRBuilder<> createLoadBuilder(llvm::BasicBlock *BB, iterator I) {
+  return llvm::IRBuilder{BB, I};
 }
 
 // Widens the allocas in the entry block to array allocas.
@@ -1170,9 +1240,9 @@ void arrayifyAllocas(llvm::BasicBlock *EntryBlock, llvm::DominatorTree &DT,
     Alloca->setMetadata(hipsycl::compiler::MDKind::Arrayified, MDAlloca);
 
     for (auto &SubCfg : SubCfgs) {
-      auto *GepIp = SubCfg.getLoadBB()->getFirstNonPHIOrDbgOrLifetime();
+      auto GepIp = SubCfg.getLoadBB()->getFirstNonPHIOrDbgOrLifetime();
 
-      llvm::IRBuilder LoadBuilder{GepIp};
+      llvm::IRBuilder LoadBuilder = createLoadBuilder(SubCfg.getLoadBB(), GepIp);
       auto *GEP = llvm::cast<llvm::GetElementPtrInst>(LoadBuilder.CreateInBoundsGEP(
           Alloca->getAllocatedType(), Alloca, SubCfg.getContiguousIdx(), I->getName() + "_gep"));
       GEP->setMetadata(hipsycl::compiler::MDKind::Arrayified, MDAlloca);
@@ -1215,17 +1285,20 @@ void formSubCfgs(llvm::Function &F, llvm::LoopInfo &LI, llvm::DominatorTree &DT,
                  llvm::PostDominatorTree &PDT, const SplitterAnnotationInfo &SAA, bool IsSscp) {
   HIPSYCL_DEBUG_EXECUTE_VERBOSE(F.viewCFG();)
 
-  const std::size_t Dim = getRangeDim(F);
+  const std::size_t Dim = getRangeDim(F, IsSscp);
   HIPSYCL_DEBUG_INFO << "[SubCFG] Kernel is " << Dim << "-dimensional\n";
 
   const auto LocalSize = getLocalSizeValues(F, Dim, IsSscp);
-
   auto *Entry = &F.getEntryBlock();
+  for(auto LocalSizeV : LocalSize) {
+    if(auto I = llvm::dyn_cast<llvm::Instruction>(LocalSizeV))
+      I->moveBefore(Entry->getTerminator());
+  }
 
   llvm::IRBuilder Builder{Entry->getTerminator()};
   llvm::Value *ReqdArrayElements = LocalSize[0];
   for (size_t D = 1; D < LocalSize.size(); ++D)
-    ReqdArrayElements = Builder.CreateMul(ReqdArrayElements, LocalSize[D]);
+    ReqdArrayElements = Builder.CreateMul(ReqdArrayElements, LocalSize[D], "local_size_linearized");
 
   std::vector<llvm::BasicBlock *> Blocks;
   Blocks.reserve(std::distance(F.begin(), F.end()));
@@ -1277,8 +1350,7 @@ void formSubCfgs(llvm::Function &F, llvm::LoopInfo &LI, llvm::DominatorTree &DT,
     Cfg.arrayifyMultiSubCfgValues(InstAllocaMap, BaseInstAllocaMap, InstContReplicaMap, SubCFGs,
                                   F.getEntryBlock().getTerminator(), ReqdArrayElements, VecInfo);
 
-  llvm::BasicBlock *NewExit =
-      llvm::BasicBlock::Create(F.getContext(), "cbs.exit", &F);
+  llvm::BasicBlock *NewExit = llvm::BasicBlock::Create(F.getContext(), "cbs.exit", &F);
   llvm::IRBuilder<> ExitBuilder(NewExit);
   ExitBuilder.CreateRetVoid();
 
@@ -1292,8 +1364,8 @@ void formSubCfgs(llvm::Function &F, llvm::LoopInfo &LI, llvm::DominatorTree &DT,
 
   llvm::BasicBlock *WhileHeader = nullptr;
   WhileHeader =
-      generateWhileSwitchAround(&F.getEntryBlock(), F.getEntryBlock().getSingleSuccessor(),
-                                NewExit, LastBarrierIdStorage, SubCFGs);
+      generateWhileSwitchAround(&F.getEntryBlock(), F.getEntryBlock().getSingleSuccessor(), NewExit,
+                                LastBarrierIdStorage, SubCFGs);
 
   llvm::removeUnreachableBlocks(F);
 
@@ -1344,7 +1416,7 @@ void createLoopsAroundKernel(llvm::Function &F, llvm::DominatorTree &DT, llvm::L
 
   moveAllocasToEntry(F, Blocks);
 
-  const auto Dim = getRangeDim(F);
+  const auto Dim = getRangeDim(F, IsSscp);
 
   // insert dummy induction variable that can be easily identified and replaced later
   llvm::IRBuilder Builder{F.getEntryBlock().getTerminator()};
@@ -1388,7 +1460,7 @@ void SubCfgFormationPassLegacy::getAnalysisUsage(llvm::AnalysisUsage &AU) const 
 bool SubCfgFormationPassLegacy::runOnFunction(llvm::Function &F) {
   auto &SAA = getAnalysis<SplitterAnnotationAnalysisLegacy>().getAnnotationInfo();
 
-  if (!SAA.isKernelFunc(&F) || getRangeDim(F) == 0)
+  if (!SAA.isKernelFunc(&F) || getRangeDim(F, false) == 0)
     return false;
 
   HIPSYCL_DEBUG_INFO << "[SubCFG] Form SubCFGs in " << F.getName() << "\n";
@@ -1412,7 +1484,7 @@ llvm::PreservedAnalyses SubCfgFormationPass::run(llvm::Function &F,
   auto &MAM = AM.getResult<llvm::ModuleAnalysisManagerFunctionProxy>(F);
   auto *SAA = MAM.getCachedResult<SplitterAnnotationAnalysis>(*F.getParent());
 
-  if (!SAA || !SAA->isKernelFunc(&F) || getRangeDim(F) == 0)
+  if (!SAA || !SAA->isKernelFunc(&F) || getRangeDim(F, IsSscp_) == 0)
     return llvm::PreservedAnalyses::all();
 
   HIPSYCL_DEBUG_INFO << "[SubCFG] Form SubCFGs in " << F.getName() << "\n";

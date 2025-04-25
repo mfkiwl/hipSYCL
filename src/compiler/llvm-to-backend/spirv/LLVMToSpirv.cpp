@@ -47,6 +47,12 @@ namespace {
 
 static const char* DynamicLocalMemArrayName = "__acpp_sscp_spirv_dynamic_local_mem";
 
+#if LLVM_VERSION_MAJOR >= 20
+#define SPIRV_INTEL_LONG_CONSTANT_EXT_NAME "SPV_INTEL_long_composites"
+#else
+#define SPIRV_INTEL_LONG_CONSTANT_EXT_NAME "SPV_INTEL_long_constant_composite"
+#endif
+
 void appendIntelLLVMSpirvOptions(llvm::SmallVector<std::string>& out) {
   llvm::SmallVector<std::string> Args {"-spirv-max-version=1.3",
       "-spirv-debug-info-version=ocl-100",
@@ -62,8 +68,8 @@ void appendIntelLLVMSpirvOptions(llvm::SmallVector<std::string>& out) {
       "vector_compute,+SPV_INTEL_fast_composite,+SPV_INTEL_fpga_buffer_location,+SPV_INTEL_joint_"
       "matrix,+SPV_INTEL_arbitrary_precision_fixed_point,+SPV_INTEL_arbitrary_precision_floating_"
       "point,+SPV_INTEL_arbitrary_precision_floating_point,+SPV_INTEL_variable_length_array,+SPV_"
-      "INTEL_fp_fast_math_mode,+SPV_INTEL_fpga_cluster_attributes,+SPV_INTEL_loop_fuse,+SPV_INTEL_"
-      "long_constant_composite,+SPV_INTEL_fpga_invocation_pipelining_attributes,+SPV_INTEL_fpga_"
+      "INTEL_fp_fast_math_mode,+SPV_INTEL_fpga_cluster_attributes,+SPV_INTEL_loop_fuse,+"
+      SPIRV_INTEL_LONG_CONSTANT_EXT_NAME ",+SPV_INTEL_fpga_invocation_pipelining_attributes,+SPV_INTEL_fpga_"
       "dsp_control,+SPV_INTEL_arithmetic_fence,+SPV_INTEL_runtime_aligned,"
       "+SPV_INTEL_optnone,+SPV_INTEL_token_type,+SPV_INTEL_bfloat16_conversion,+SPV_INTEL_joint_"
       "matrix,+SPV_INTEL_hw_thread_queries,+SPV_INTEL_memory_access_aliasing,+SPV_EXT_relaxed_printf_string_address_space"
@@ -120,6 +126,60 @@ void assignSPIRCallConvention(llvm::Function *F) {
     }
   }
 }
+
+void rewriteZeroSizeArrayGEPs(llvm::Module& M) {
+  llvm::SmallVector<llvm::GetElementPtrInst*> GEPs;
+  for(auto& F : M) {
+    for(auto& BB : F) {
+      for(auto& I : BB) {
+        if(auto* GEPInst = llvm::dyn_cast<llvm::GetElementPtrInst>(&I)){
+          auto* SourceTy =  GEPInst->getSourceElementType();
+          
+          if(GEPInst->getNumIndices() > 0 && SourceTy->isArrayTy()) {
+            llvm::Value* FirstIndex = GEPInst->idx_begin()->get();
+            int64_t FirstIndexVal = -1;
+            if (llvm::ConstantInt* CI = llvm::dyn_cast<llvm::ConstantInt>(FirstIndex)) {
+              if (CI->getBitWidth() <= 64) {
+                FirstIndexVal = CI->getSExtValue();
+              }
+            }
+
+            if(FirstIndexVal == 0 && SourceTy->getArrayNumElements() == 0) {
+              GEPs.push_back(GEPInst);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  for(auto* GEPInst : GEPs) {
+    auto *ReplacementType =
+        llvm::ArrayType::get(GEPInst->getSourceElementType()->getArrayElementType(), 1);
+
+    llvm::SmallVector<llvm::Value*> Indices;
+    for(llvm::Use& Op : GEPInst->indices()) {
+      Indices.push_back(Op.get());
+    }
+
+    llvm::Value* PointerOperand = GEPInst->getPointerOperand();
+    // Old LLVM needs bitcast
+#if LLVM_VERSION_MAJOR < 17
+    llvm::Type *BitcastTarget =
+        llvm::PointerType::get(ReplacementType, GEPInst->getPointerAddressSpace());
+    PointerOperand = new llvm::BitCastInst(PointerOperand, BitcastTarget, "", GEPInst);
+#endif
+    llvm::GetElementPtrInst *NewGEP = llvm::GetElementPtrInst::Create(
+        ReplacementType, PointerOperand, Indices, "", llvmutils::makeInsertionPoint(GEPInst));
+    if(GEPInst->isInBounds())
+      NewGEP->setIsInBounds(true);
+    GEPInst->replaceAllUsesWith(NewGEP);
+    GEPInst->dropAllReferences();
+    GEPInst->eraseFromParent();
+  }
+
+}
+
 }
 
 LLVMToSpirvTranslator::LLVMToSpirvTranslator(const std::vector<std::string> &KN)
@@ -132,6 +192,9 @@ bool LLVMToSpirvTranslator::toBackendFlavor(llvm::Module &M, PassHandler& PH) {
   M.setDataLayout("e-i64:64-v16:16-v24:32-v32:32-v48:64-v96:128-v192:256-v256:256-v512:512-v1024:"
                   "1024-A4-n8:16:32:64");
 
+  // llvm-spirv translator does not like GEPs into 0-size arrays.
+  rewriteZeroSizeArrayGEPs(M);
+  
   AddressSpaceMap ASMap = getAddressSpaceMap();
   KernelFunctionParameterRewriter ParamRewriter{
     // llvm-spirv wants ByVal attribute for all aggregates passed in by-value
@@ -195,8 +258,8 @@ bool LLVMToSpirvTranslator::toBackendFlavor(llvm::Module &M, PassHandler& PH) {
           // llvm-spirv translator does not like llvm.lifetime.start/end operate on generic
           // pointers.
           auto* CalledF = CB->getCalledFunction();
-          if (llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.start") ||
-              llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.end")) {
+          if (CalledF && (llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.start") ||
+                          llvmutils::starts_with(CalledF->getName(), "llvm.lifetime.end"))) {
             if(CB->getNumOperands() > 1 && CB->getArgOperand(1)->getType()->isPointerTy())
               if (CB->getArgOperand(1)->getType()->getPointerAddressSpace() ==
                   ASMap[AddressSpace::Generic])
@@ -219,33 +282,45 @@ bool LLVMToSpirvTranslator::toBackendFlavor(llvm::Module &M, PassHandler& PH) {
 }
 
 bool LLVMToSpirvTranslator::translateToBackendFormat(llvm::Module &FlavoredModule, std::string &out) {
+  bool Create = true;
+  auto consumeError = [&](std::error_code EC) {
+    if(EC) {
+      if(Create)
+        this->registerError("LLVMToPtx: Could not create temp file: " + EC.message());
+      else
+        this->registerError("LLVMToPtx: Could not remove temp file: " + EC.message());
+      return false;
+    }
+    return true;
+  };
 
-  auto InputFile = llvm::sys::fs::TempFile::create("acpp-sscp-spirv-%%%%%%.bc");
-  auto OutputFile = llvm::sys::fs::TempFile::create("acpp-sscp-spirv-%%%%%%.spv");
-  
-  std::string OutputFilename = OutputFile->TmpName;
-  
-  auto E = InputFile.takeError();
-  if(E){
-    this->registerError("LLVMToSpirv: Could not create temp file: "+InputFile->TmpName);
-    return false;
+  int InputFD = 0;
+  llvm::SmallVector<char> InputFileNameBuf;
+  // don't use fs::TempFile, as we can't unlock the file for the clang invocation later... (Windows)
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-amdgpu", "bc", InputFD, InputFileNameBuf, llvm::sys::fs::OF_None))) return false;
+  std::string InputFileName = InputFileNameBuf.data();
+
+  llvm::SmallVector<char> OutputFile;
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-host", "hipfb", OutputFile, llvm::sys::fs::OF_None))) return false;
+  std::string OutputFileName = OutputFile.data();
+
+  Create = false;
+  AtScopeExit DestroyInputFile([&]() { consumeError(llvm::sys::fs::remove(InputFileName)); });
+  AtScopeExit DestroyOutputFile([&]() { consumeError(llvm::sys::fs::remove(OutputFileName)); });
+
+  {
+    llvm::raw_fd_ostream InputStream{InputFD, true};
+
+    llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
+    InputStream.flush();
   }
-
-  AtScopeExit DestroyInputFile([&]() { auto Err = InputFile->discard(); });
-  AtScopeExit DestroyOutputFile([&]() { auto Err = OutputFile->discard(); });
-
-  std::error_code EC;
-  llvm::raw_fd_ostream InputStream{InputFile->FD, false};
-  
-  llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
-  InputStream.flush();
 
   std::string LLVMSpirVTranslator = hipsycl::common::filesystem::join_path(
       hipsycl::common::filesystem::get_install_directory(), HIPSYCL_RELATIVE_LLVMSPIRV_PATH);
 
 
   llvm::SmallVector<std::string> Args{
-      "-o=" + OutputFilename
+      "-o=" + OutputFileName
   };
   if(UseIntelLLVMSpirvArgs)
     appendIntelLLVMSpirvOptions(Args);
@@ -257,7 +332,7 @@ bool LLVMToSpirvTranslator::translateToBackendFormat(llvm::Module &FlavoredModul
   llvm::SmallVector<llvm::StringRef, 16> Invocation{LLVMSpirVTranslator};
   for(const auto& A : Args)
     Invocation.push_back(A);
-  Invocation.push_back(InputFile->TmpName);
+  Invocation.push_back(InputFileName);
 
   std::string ArgString;
   for(const auto& S : Invocation) {
@@ -276,7 +351,7 @@ bool LLVMToSpirvTranslator::translateToBackendFormat(llvm::Module &FlavoredModul
   }
   
   auto ReadResult =
-      llvm::MemoryBuffer::getFile(OutputFile->TmpName, -1);
+      llvm::MemoryBuffer::getFile(OutputFileName, -1);
   
   if(auto Err = ReadResult.getError()) {
     this->registerError("LLVMToSpirv: Could not read result file"+Err.message());

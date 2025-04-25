@@ -79,11 +79,14 @@ void identifyStoresPotentiallyForStdparArgHandling(
                   return true;
                 }
               } else if (auto *CB = llvm::dyn_cast<llvm::CallBase>(Current)) {
-                if (StdparFunctions.contains(CB->getCalledFunction())) {
-                  Users.push_back(Current);
-                  return true;
-                } else if(llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.lifetime")) {
-                  return true;
+                auto* Callee = CB->getCalledFunction();
+                if(Callee) {
+                  if (StdparFunctions.contains(Callee)) {
+                    Users.push_back(Current);
+                    return true;
+                  } else if (llvmutils::starts_with(Callee->getName(), "llvm.lifetime")) {
+                    return true;
+                  }
                 }
               }
 
@@ -384,7 +387,7 @@ llvm::PreservedAnalyses SyncElisionPass::run(llvm::Module &M, llvm::ModuleAnalys
             [&](llvm::Instruction *InsertSyncBefore) {
               HIPSYCL_DEBUG_INFO << "[stdpar] SyncElision: Inserting synchronization in function "
                                 << InsertSyncBefore->getParent()->getParent()->getName() << "\n";
-              llvm::CallInst::Create(SyncF->getFunctionType(), SyncF, "", InsertSyncBefore);
+              llvm::CallInst::Create(SyncF->getFunctionType(), SyncF, "", llvmutils::makeInsertionPoint(InsertSyncBefore));
             });
       }
     }

@@ -47,9 +47,10 @@ bool isReflectionAnnotatedFunction(llvm::Function* F, const utils::ProcessFuncti
 bool isAnyUserReflectionAnnotatedFunction(llvm::Function* F, const utils::ProcessFunctionAnnotationPass& PFA) {
   for(auto* U : F->users()) {
     if(auto* CB = llvm::dyn_cast<llvm::CallBase>(U)) {
-      if(CB->getCalledFunction() != F) {
+      auto* CalledF = CB->getCalledFunction();
+      if(CalledF && (CalledF != F)) {
       
-        if(isReflectionAnnotatedFunction(CB->getCalledFunction(), PFA))
+        if(isReflectionAnnotatedFunction(CalledF, PFA))
           return true;
       
       }

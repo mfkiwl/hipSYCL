@@ -185,6 +185,10 @@ sycl::event copy_n(sycl::queue &q, ForwardIt1 first, Size count,
                    ForwardIt2 result,
                    const std::vector<sycl::event> &deps = {});
 
+template <class ForwardIt1, class ForwardIt2>
+sycl::event move(sycl::queue &q, ForwardIt1 first, ForwardIt1 last,
+                 ForwardIt2 d_first, const std::vector<sycl::event> &deps = {});
+
 template <class ForwardIt, class T>
 sycl::event fill(sycl::queue &q, ForwardIt first, ForwardIt last,
                  const T &value, const std::vector<sycl::event> &deps = {});
@@ -224,6 +228,15 @@ sycl::event replace_copy(sycl::queue &q, ForwardIt1 first, ForwardIt1 last,
                          const T &new_value,
                          const std::vector<sycl::event> &deps = {});
 
+template <class BidirIt>
+sycl::event reverse(sycl::queue &q, BidirIt first, BidirIt last,
+                     const std::vector<sycl::event> &deps = {});
+
+template <class BidirIt, class ForwardIt>
+sycl::event reverse_copy(sycl::queue &q, BidirIt first,
+                         BidirIt last, ForwardIt d_first,
+                         const std::vector<sycl::event> &deps = {});
+
 /// The result of the operation will be stored in out.
 ///
 /// out must point to device-accessible memory, and will be set to 0
@@ -250,6 +263,24 @@ template <class ForwardIt, class UnaryPredicate>
 sycl::event none_of(sycl::queue &q,
                    ForwardIt first, ForwardIt last, int* out,
                    UnaryPredicate p, const std::vector<sycl::event>& deps = {});
+
+/// The result of the reduction will be written to out.
+///
+/// out must point to memory that is accessible on the target device.
+template<class ForwardIt, class T>
+sycl::event count(sycl::queue &q, util::allocation_group &scratch_allocations,
+                  ForwardIt first, ForwardIt last,
+                  typename std::iterator_traits<ForwardIt>::difference_type *out,
+                  const T& value, const std::vector<sycl::event> &deps = {});
+
+/// The result of the reduction will be written to out.
+///
+/// out must point to memory that is accessible on the target device.
+template<class ForwardIt, class UnaryPredicate>
+sycl::event count_if(sycl::queue &q, util::allocation_group &scratch_allocations,
+                  ForwardIt first, ForwardIt last,
+                  typename std::iterator_traits<ForwardIt>::difference_type *out,
+                  UnaryPredicate p, const std::vector<sycl::event> &deps = {});
 
 template <class RandomIt, class Compare>
 sycl::event sort(sycl::queue &q, RandomIt first, RandomIt last,

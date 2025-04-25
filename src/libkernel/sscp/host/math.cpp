@@ -90,7 +90,9 @@ HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(erf)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(erfc)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(exp)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(exp2)
+#if !defined(_WIN32) && !defined(__APPLE__)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(exp10)
+#endif
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN2(pow)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(expm1)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(fabs)
@@ -155,11 +157,8 @@ HIPSYCL_SSCP_BUILTIN float __acpp_sscp_frexp_f32(float x,
   return frexpf(x, y);
 }
 HIPSYCL_SSCP_BUILTIN double __acpp_sscp_frexp_f64(double x,
-                                                     __acpp_int64 *y) {
-  __acpp_int32 w;
-  auto res = frexp(x, &w);
-  *y = w;
-  return res;
+                                                     __acpp_int32 *y) {
+  return frexp(x, y);
 }
 
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN2(hypot)
@@ -171,7 +170,7 @@ HIPSYCL_SSCP_BUILTIN float __acpp_sscp_ldexp_f32(float x,
 }
 
 HIPSYCL_SSCP_BUILTIN double __acpp_sscp_ldexp_f64(double x,
-                                                     __acpp_int64 k) {
+                                                     __acpp_int32 k) {
   return ldexp(x, k);
 }
 
@@ -179,16 +178,15 @@ HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(tgamma)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(lgamma)
 
 
+#if !defined(_WIN32) && !defined(__APPLE__)
 HIPSYCL_SSCP_BUILTIN float __acpp_sscp_lgamma_r_f32(float x, __acpp_int32* y ) {
-  return lgammaf_r(x,y);
+  return lgammaf_r(x, y);
 }
 
-HIPSYCL_SSCP_BUILTIN double __acpp_sscp_lgamma_r_f64(double x, __acpp_int64* y) {
-  __acpp_int32 w;
-  auto res = lgamma_r(x,&w);
-  *y = w;
-  return res;
+HIPSYCL_SSCP_BUILTIN double __acpp_sscp_lgamma_r_f64(double x, __acpp_int32* y) {
+  return lgamma_r(x, y);
 }
+#endif
 
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(log)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(log2)
@@ -197,9 +195,10 @@ HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(log1p)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN(logb)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN3_NAME(mad,fmaf,fma)
 
+#if !defined(_WIN32) && !defined(__APPLE__)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN2_NAME(maxmag,fmaxmagf,fmaxmag)
 HIPSYCL_SSCP_MAP_HOST_FLOAT_BUILTIN2_NAME(minmag,fmaxmagf,fmaxmag)
-
+#endif
 
 HIPSYCL_SSCP_BUILTIN float __acpp_sscp_modf_f32(float x, float* y ) {
   return modff(x, y);
@@ -227,7 +226,7 @@ HIPSYCL_SSCP_BUILTIN float __acpp_sscp_rootn_f32(float x,
   return __acpp_sscp_pow_f32(x, 1.f/static_cast<float>(y));
 }
 HIPSYCL_SSCP_BUILTIN double __acpp_sscp_rootn_f64(double x,
-                                                     __acpp_int64 y) {
+                                                     __acpp_int32 y) {
   return __acpp_sscp_pow_f64(x, 1./static_cast<double>(y));
 }
 

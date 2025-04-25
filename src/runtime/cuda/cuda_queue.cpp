@@ -359,11 +359,10 @@ result cuda_queue::submit_kernel(kernel_operation &op, const dag_node_ptr& node)
 }
 
 result cuda_queue::submit_prefetch(prefetch_operation& op, const dag_node_ptr& node) {
+  cuda_instrumentation_guard instrumentation{this, op, node.get()};
 #ifndef _WIN32
-  
   cudaError_t err = cudaSuccess;
   
-  cuda_instrumentation_guard instrumentation{this, op, node.get()};
   if (op.get_target().is_host()) {
     err = cudaMemPrefetchAsync(op.get_pointer(), op.get_num_bytes(),
                                         cudaCpuDeviceId, get_stream());
@@ -562,11 +561,11 @@ result cuda_queue::submit_multipass_kernel_from_code_object(
 }
 
 result cuda_queue::submit_sscp_kernel_from_code_object(
-    const kernel_operation &op, hcf_object_id hcf_object,
-    std::string_view kernel_name, const rt::hcf_kernel_info *kernel_info,
-    const rt::range<3> &num_groups, const rt::range<3> &group_size,
-    unsigned local_mem_size, void **args, std::size_t *arg_sizes,
-    std::size_t num_args, const kernel_configuration &initial_config) {
+    hcf_object_id hcf_object, std::string_view kernel_name,
+    const rt::hcf_kernel_info *kernel_info, const rt::range<3> &num_groups,
+    const rt::range<3> &group_size, unsigned local_mem_size, void **args,
+    std::size_t *arg_sizes, std::size_t num_args,
+    const kernel_configuration &initial_config) {
 #ifdef HIPSYCL_WITH_SSCP_COMPILER
 
   this->activate_device();
@@ -672,15 +671,15 @@ result cuda_queue::submit_sscp_kernel_from_code_object(
         ptx_image, target_arch_name, hcf_object, kernel_names, device, _config};
     result r = exec_obj->get_build_result();
 
-    HIPSYCL_DEBUG_INFO
-        << "cuda_queue: Successfully compiled SSCP kernels to module " << exec_obj->get_module()
-        << std::endl;
-
     if(!r.is_success()) {
       register_error(r);
       delete exec_obj;
       return nullptr;
     }
+
+    HIPSYCL_DEBUG_INFO
+        << "cuda_queue: Successfully compiled SSCP kernels to module " << exec_obj->get_module()
+        << std::endl;
 
     if(kernel_names.size() == 1)
       exec_obj->get_jit_output_metadata().kernel_retained_arguments_indices =
@@ -777,7 +776,7 @@ result cuda_sscp_code_object_invoker::submit_kernel(
     const kernel_configuration &config) {
 
   return _queue->submit_sscp_kernel_from_code_object(
-      op, hcf_object, kernel_name, kernel_info, num_groups, group_size,
+      hcf_object, kernel_name, kernel_info, num_groups, group_size,
       local_mem_size, args, arg_sizes, num_args, config);
 }
 }
