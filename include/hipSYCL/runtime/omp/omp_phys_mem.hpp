@@ -8,8 +8,8 @@
  * See file LICENSE in the project root for full license details.
  */
 // SPDX-License-Identifier: BSD-2-Clause
-#ifndef HIPSYCL_OMP_PHYS_MEM_HPP
-#define HIPSYCL_OMP_PHYS_MEM_HPP
+#ifndef ACPP_OMP_PHYS_MEM_HPP
+#define ACPP_OMP_PHYS_MEM_HPP
 
 #include <cstddef>
 #include <optional>
@@ -27,7 +27,7 @@ namespace rt {
  * @details This function is implemented for Mac OS X and Linux. Other platforms
  * will return std::nullopt.
  */
-std::optional<std::size_t> getPhysicalMemory();
+std::optional<std::size_t> get_physical_memory();
 } // namespace rt
 } // namespace hipsycl
 

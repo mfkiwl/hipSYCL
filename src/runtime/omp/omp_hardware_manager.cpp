@@ -123,13 +123,13 @@ std::size_t
 omp_hardware_context::get_property(device_uint_property prop) const {
 
   auto phys_mem_or_max = []() {
-    if (auto mem = getPhysicalMemory()) {
+    if (auto mem = get_physical_memory()) {
       return *mem;
     } else {
       return std::numeric_limits<std::size_t>::max();
     }
   };
-  
+
   switch (prop) {
   case device_uint_property::max_compute_units:
     // Do not change this; heuristics in algorithms library
@@ -257,7 +257,7 @@ omp_hardware_context::get_property(device_uint_property prop) const {
     return 1; // TODO
     break;
   case device_uint_property::global_mem_size:
-    return phys_mem_or_max(); // TODO
+    return phys_mem_or_max();
     break;
   case device_uint_property::max_constant_buffer_size:
     return std::numeric_limits<std::size_t>::max();

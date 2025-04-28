@@ -15,44 +15,46 @@
 #include <sys/sysctl.h>
 #include <sys/types.h>
 
-std::optional<std::size_t> hipsycl::rt::getPhysicalMemory() {
+std::optional<std::size_t> hipsycl::rt::get_physical_memory() {
+  int mib[] = {CTL_HW, HW_MEMSIZE};
+  int64_t value = 0;
+  size_t length = sizeof(value);
 
-int mib[]     = {CTL_HW, HW_MEMSIZE};
-int64_t value = 0;
-size_t length = sizeof(value);
-
-if (-1 == sysctl(mib, 2, &value, &length, NULL, 0)) {
+  if (-1 == sysctl(mib, 2, &value, &length, NULL, 0)) {
     return std::nullopt;
-}
-return value;
-}
-
-// Linux/BSD implementation:
-#elif (defined(linux) || defined(__linux__) || defined(__linux))                                   \
-|| (defined(__DragonFly__) || defined(__FreeBSD__) || defined(__NetBSD__)                      \
-    || defined(__OpenBSD__))
-
-#include <sys/sysinfo.h>
-
-std::optional<std::size_t> hipsycl::rt::getPhysicalMemory() {
-struct sysinfo info;
-sysinfo(&info);
-return info.totalram;
+  }
+  return value;
 }
 
 #elif _WIN32
 
 #include <windows.h>
 
-std::optional<std::size_t> hipsycl::rt::getPhysicalMemory() {
-    MEMORYSTATUSEX status;
-    status.dwLength = sizeof(status);
-    GlobalMemoryStatusEx(&status);
-    return status.ullTotalPhys;
+std::optional<std::size_t> hipsycl::rt::get_physical_memory() {
+  MEMORYSTATUSEX status;
+  status.dwLength = sizeof(status);
+  GlobalMemoryStatusEx(&status);
+  return status.ullTotalPhys;
 }
 
 #else
 
-std::optional<std::size_t> hipsycl::rt::getPhysicalMemory() { return std::nullopt; }
+// Linux/BSD implementation, if not just return std::nullopt
+#ifdef __has_include
+#if __has_include(<sys/sysinfo.h>)
+#include <sys/sysinfo.h>
+#endif
+#endif
+
+std::optional<std::size_t> hipsycl::rt::get_physical_memory() {
+#ifdef __has_include
+#if __has_include(<sys/sysinfo.h>)
+  struct sysinfo info;
+  sysinfo(&info);
+  return info.totalram;
+#endif
+#endif
+  return std::nullopt;
+}
 
 #endif
