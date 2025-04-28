@@ -305,7 +305,8 @@ if(WITH_CPU_BACKEND)
     omp/omp_backend.cpp
     omp/omp_event.cpp
     omp/omp_hardware_manager.cpp
-    omp/omp_queue.cpp)
+    omp/omp_queue.cpp
+    omp/omp_phys_mem.cpp)
 
   if(TARGET omp) # ACPP_LLVM_COMPONENT with openmp active
     set(OpenMP_CXX_INCLUDE_DIRS ${CMAKE_INSTALL_FULL_INCLUDEDIR})

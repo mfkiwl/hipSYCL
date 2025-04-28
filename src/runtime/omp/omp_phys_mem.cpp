@@ -40,6 +40,17 @@ sysinfo(&info);
 return info.totalram;
 }
 
+#elif _WIN32
+
+#include <windows.h>
+
+std::optional<std::size_t> hipsycl::rt::getPhysicalMemory() {
+    MEMORYSTATUSEX status;
+    status.dwLength = sizeof(status);
+    GlobalMemoryStatusEx(&status);
+    return status.ullTotalPhys;
+}
+
 #else
 
 std::optional<std::size_t> hipsycl::rt::getPhysicalMemory() { return std::nullopt; }
