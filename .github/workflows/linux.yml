@@ -89,7 +89,7 @@ jobs:
         cmake -GNinja -DACPP_TARGETS="omp" -DAdaptiveCpp_DIR=${GITHUB_WORKSPACE}/build/install/lib/cmake/AdaptiveCpp ${GITHUB_WORKSPACE}/tests
         ninja
     - name: build generic SSCP tests
-      if: matrix.docker.clang >= 14 && matrix.test_kind == 'sscp'
+      if: matrix.test_kind == 'sscp'
       run: |
         mkdir ${GITHUB_WORKSPACE}/build/tests-sscp
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
@@ -122,17 +122,17 @@ jobs:
         cd ${GITHUB_WORKSPACE}/build/tests-cpu
         ACPP_VISIBILITY_MASK="omp" LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/build/install/lib ./sycl_tests
     - name: run CPU SSCP tests
-      if: matrix.docker.clang >= 14 && matrix.test_kind == 'sscp'
+      if: matrix.test_kind == 'sscp'
       run: |
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
         ACPP_VISIBILITY_MASK="omp" LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/build/install/lib ./sycl_tests
     - name: run PSTL tests on CPU
-      if: matrix.docker.clang >= 14 && matrix.test_kind == 'sscp'
+      if: matrix.test_kind == 'sscp'
       run: |
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
         ACPP_VISIBILITY_MASK="omp" LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/build/install/lib ./pstl_tests
     - name: run PCUDA tests on CPU
-      if: matrix.docker.clang >= 14 && matrix.test_kind == 'sscp'
+      if: matrix.test_kind == 'sscp'
       run: |
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
         ACPP_VISIBILITY_MASK="omp" LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/build/install/lib ./pcuda_tests
