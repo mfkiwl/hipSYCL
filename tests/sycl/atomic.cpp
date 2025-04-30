@@ -144,8 +144,6 @@ BOOST_AUTO_TEST_CASE(fetch_add_unsigned_int) {
         << 16u << " (expected) == " << data << " (received)") {
       BOOST_CHECK(data == 16u);
     }
-    // ref.fetch_add(10);
-    // BOOST_TEST(data  == 16u);
 }
 
 BOOST_AUTO_TEST_CASE(fetch_op) {
