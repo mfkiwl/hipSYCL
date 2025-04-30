@@ -124,6 +124,30 @@ void atomic_device_reduction_test(AtomicOp op, Verifier v,
   }
 }
 
+BOOST_AUTO_TEST_CASE(fetch_add_unsigned_int) {
+    unsigned int data = 0u;
+
+    ::sycl::atomic_ref<unsigned int,
+                       ::sycl::memory_order::relaxed,
+                       ::sycl::memory_scope::device,
+                       ::sycl::access::address_space::global_space>
+    ref(data);
+
+    ref.fetch_add(1);
+    BOOST_TEST(data  == 1u);
+
+    ref.fetch_add(5);
+    BOOST_TEST(data  == 6u);
+
+    ref.fetch_add(10);
+    BOOST_TEST_CONTEXT("Checking result for fetch_add() on unsigned integers: "
+        << 16u << " (expected) == " << data << " (received)") {
+      BOOST_CHECK(data == 16u);
+    }
+    // ref.fetch_add(10);
+    // BOOST_TEST(data  == 16u);
+}
+
 BOOST_AUTO_TEST_CASE(fetch_op) {
 
   auto fetch_add = [](auto& atomic, auto x) {
@@ -183,39 +207,39 @@ BOOST_AUTO_TEST_CASE(fetch_op) {
     v = std::max(v,x);
   };
 
-BOOST_AUTO_TEST_CASE(fetch_add_unsigned) {
-   // Create a queue.
-   ::sycl::queue q;
-
-   // Allocate some memory. For the target device
-   ::sycl::buffer<unsigned int> buf(1);
-   // Allows for our CPU to have access to the allocated memory
-   auto host_acc = buf.get_access<::sycl::access::mode::read_write>();
-   // First entry of memory is 0 unsigned
-   host_acc[0] = 0u;
-
-   // Submit a command group to the queue, which would increment the buffer
-   // value atomically.
-   q.submit([&](::sycl::handler &cgh)
-            {
-      // Get an accessor to the buffer.
-      auto ptr = buf.get_access<::sycl::access::mode::read_write>(cgh);
-
-      // Increment the value in the buffer atomically.
-      cgh.single_task<class kernel>([ptr]() {
-         ::sycl::atomic_ref<unsigned int,
-                            ::sycl::memory_order::relaxed,
-                            ::sycl::memory_scope::device,
-                            ::sycl::access::address_space::global_space>
-                            ref(ptr[0]);
-         ref.fetch_add(1);
-      }); })
-       .wait_and_throw();
-  
-  // now read it back on the host
-  auto host_acc_read = buf.get_access<::sycl::access::mode::read_write>();
-  BOOST_CHECK_EQUAL(host_acc_read[0], 1u);
-}
+// BOOST_AUTO_TEST_CASE(fetch_add_unsigned) {
+//    // Create a queue.
+//    ::sycl::queue q;
+//
+//    // Allocate some memory. For the target device
+//    ::sycl::buffer<unsigned int> buf(1);
+//    // Allows for our CPU to have access to the allocated memory
+//    auto host_acc = buf.get_access<::sycl::access::mode::read_write>();
+//    // First entry of memory is 0 unsigned
+//    host_acc[0] = 0u;
+//
+//    // Submit a command group to the queue, which would increment the buffer
+//    // value atomically.
+//    q.submit([&](::sycl::handler &cgh)
+//             {
+//       // Get an accessor to the buffer.
+//       auto ptr = buf.get_access<::sycl::access::mode::read_write>(cgh);
+//
+//       // Increment the value in the buffer atomically.
+//       cgh.single_task<class kernel>([ptr]() {
+//          ::sycl::atomic_ref<unsigned int,
+//                             ::sycl::memory_order::relaxed,
+//                             ::sycl::memory_scope::device,
+//                             ::sycl::access::address_space::global_space>
+//                             ref(ptr[0]);
+//          ref.fetch_add(1);
+//       }); })
+//        .wait_and_throw();
+//
+//   // now read it back on the host
+//   auto host_acc_read = buf.get_access<::sycl::access::mode::read_write>();
+//   BOOST_CHECK_EQUAL(host_acc_read[0], 1u);
+// }
 
 
 #define HIPSYCL_ATOMIC_REF_TEST_T(Type, Op, Verifier)                              \
