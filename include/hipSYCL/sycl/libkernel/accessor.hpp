@@ -2053,7 +2053,7 @@ public:
   ACPP_KERNEL_TARGET
   size_t get_count() const
   {
-    return _num_elements.size();
+    return static_cast<sycl::range<dimensions>>(_num_elements).size();
   }
 
   ACPP_KERNEL_TARGET
@@ -2065,7 +2065,7 @@ public:
   ACPP_KERNEL_TARGET
   size_t size() const noexcept
   {
-    return _num_elements.size();
+    return static_cast<sycl::range<dimensions>>(_num_elements).size();
   }
 
   size_type max_size() const noexcept
@@ -2287,7 +2287,7 @@ public:
   ACPP_KERNEL_TARGET
   size_t get_count() const
   {
-    return _num_elements.size();
+    return static_cast<sycl::range<dimensions>>(_num_elements).size();
   }
 
   ACPP_KERNEL_TARGET
@@ -2299,7 +2299,7 @@ public:
   ACPP_KERNEL_TARGET
   size_t size() const noexcept
   {
-    return _num_elements.size();
+    return static_cast<sycl::range<dimensions>>(_num_elements).size();
   }
 
   size_type max_size() const noexcept
@@ -2382,7 +2382,7 @@ public:
     };
   }
 
-  template <typename T = dataT, std::enable_if<std::is_same_v<T, dataT> && !std::is_const_v<T>, bool> = false>
+  template <typename T = dataT, std::enable_if_t<std::is_same_v<T, dataT> && !std::is_const_v<T>, bool> = false>
   operator local_accessor<const T, dimensions>() const {
     return local_accessor<const T, dimensions>{_addr, _num_elements};
   }
