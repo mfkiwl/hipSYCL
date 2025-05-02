@@ -1,5 +1,6 @@
 #
-![The AdaptiveCpp Logo](img/logo/logo-color.png)
+![The AdaptiveCpp Logo](img/logo/logo-color.png#only-light)
+![The AdaptiveCpp Logo](img/logo/logo-color-dark.png#only-dark)
 
 Welcome to the documentation of AdaptiveCpp!
 
