@@ -18,7 +18,6 @@
 #include "dag_direct_scheduler.hpp"
 #include "dag_unbound_scheduler.hpp"
 #include "dag_submitted_ops.hpp"
-#include "generic/async_worker.hpp"
 
 
 namespace hipsycl {
@@ -33,8 +32,7 @@ public:
   dag_manager(runtime* rt);
   ~dag_manager();
 
-  // Submits operations asynchronously
-  void flush_async();
+
   // Submits operations asynchronously and
   // wait until they have been submitted
   void flush_sync();
@@ -46,12 +44,12 @@ public:
 
   void register_submitted_ops(dag_node_ptr);
 private:
+  void flush();
   void trigger_flush_opportunity();
 
   dag_builder* builder() const;
 
   std::unique_ptr<dag_builder> _builder;
-  worker_thread _worker;
   
   dag_direct_scheduler _direct_scheduler;
   dag_unbound_scheduler _unbound_scheduler;
