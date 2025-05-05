@@ -92,6 +92,8 @@ else()
   endif()
 endif()
 
+set(ACPP_EXPERIMENTAL_LLVM OFF CACHE BOOL "Whether to allow building AdaptiveCpp against unsupported LLVM versions")
+
 set(HIPSYCL_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 set(ACPP_SOURCE_ROOT "${CMAKE_CURRENT_SOURCE_DIR}")
 set(ACPP_BINARY_ROOT "${CMAKE_CURRENT_BINARY_DIR}")
@@ -400,6 +402,18 @@ if(BUILD_CLANG_PLUGIN)
       set(WITH_ACCELERATED_CPU false)
     endif()
   endif()
+  if(NOT ACPP_EXPERIMENTAL_LLVM)
+    if(${LLVM_VERSION_MAJOR} GREATER 20)
+      message(SEND_ERROR "LLVM versions greater than 20 are not yet tested/supported, use -DACPP_EXPERIMENTAL_LLVM=ON if you still wish to try your luck.")
+    endif()
+    if(${LLVM_VERSION_MAJOR} GREATER 17)
+      # Starting from LLVM 18, releases will have LLVM_VERSION_MINOR>0
+      if(${LLVM_VERSION_MINOR} EQUAL 0)
+        message(SEND_ERROR "This LLVM seems to be a development version; only LLVM releases are tested and supported. Use -DACPP_EXPERIMENTAL_LLVM=ON if you still wish to try your luck.")
+      endif()
+    endif()
+  endif()
+
   message(STATUS "Using clang include directory: ${CLANG_INCLUDE_PATH}")
 
   # Check if building on Windows and LLVM_LIBS is set, if not, use LLVM_AVAILABLE_LIBS 
