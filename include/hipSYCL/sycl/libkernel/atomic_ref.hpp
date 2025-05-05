@@ -42,6 +42,11 @@ struct memory_order_traits<memory_order::seq_cst> {
 };
 
 
+inline void atomic_fence(memory_order order, memory_scope scope) {
+  detail::__acpp_atomic_fence(order, scope);
+}
+
+
 template <typename T, memory_order DefaultOrder, memory_scope DefaultScope,
           access::address_space Space = access::address_space::generic_space>
 class atomic_ref {
