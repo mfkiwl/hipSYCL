@@ -230,6 +230,8 @@ BOOST_AUTO_TEST_CASE(fetch_op) {
 #endif
 }
 
+
+#ifndef ACPP_LIBKERNEL_CUDA_NVCXX // nvc++ has some issue with this test
 BOOST_AUTO_TEST_CASE(atomic_fence) {
   // This is mainly a compile-test. Testing atomic memory semantics is hard...
   
@@ -250,5 +252,6 @@ BOOST_AUTO_TEST_CASE(atomic_fence) {
 
   sycl::free(data, q);
 }
+#endif
 
 BOOST_AUTO_TEST_SUITE_END()
