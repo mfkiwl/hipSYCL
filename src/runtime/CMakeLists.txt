@@ -239,7 +239,7 @@ if(WITH_OPENCL_BACKEND)
   include(FetchContent)
   FetchContent_Declare(ocl-headers
     GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers
-    GIT_TAG c860bb551eeef9a47d56286a70cea903db3d6ed2
+    GIT_TAG 265df85aec478d14a5c5880d7bb92d7dd52714ef
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""
   )
@@ -253,7 +253,7 @@ if(WITH_OPENCL_BACKEND)
   
   FetchContent_Declare(ocl-cxx-headers
     GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-CLHPP
-    GIT_TAG 0bdbbfe5ecda42cff50c96cc5e33527f42fcbd45
+    GIT_TAG 67d100e70612341707725b6648ccca4c10b0dc31
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""
   )
