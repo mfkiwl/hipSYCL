@@ -3,6 +3,7 @@ if(WITH_LLVM_TO_AMDGPU_AMDHSA)
       TARGETNAME amdgpu-amdhsa 
       TRIPLE amdgcn-amd-amdhsa
       SOURCES 
+      assert.cpp
       atomic.cpp 
       barrier.cpp 
       core.cpp
