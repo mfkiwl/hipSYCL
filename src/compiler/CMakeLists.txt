@@ -66,6 +66,7 @@ if(WITH_SSCP_COMPILER)
     sscp/AggregateArgumentExpansionPass.cpp
     sscp/StdBuiltinRemapperPass.cpp
     sscp/StdAtomicRemapperPass.cpp
+    sscp/DeviceAssertPass.cpp
     sscp/pcuda/FreeKernelCall.cpp
     sscp/pcuda/StaticLocalMemoryPass.cpp
     sscp/pcuda/ExternDynamicLocalMemoryPass.cpp)

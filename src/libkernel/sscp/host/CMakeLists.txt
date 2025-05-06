@@ -4,6 +4,7 @@ if(WITH_LLVM_TO_HOST)
   endif()
 
   set(HOST_LIBKERNEL_BITCODE_SOURCES
+    assert.cpp
     atomic.cpp
     barrier.cpp
     core.cpp
