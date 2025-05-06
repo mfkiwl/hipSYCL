@@ -170,6 +170,21 @@ inline void __syncwarp() {
       __acpp_sscp_memory_scope::work_group, __acpp_sscp_memory_order::relaxed));
 }
 
+inline void __threadfence() {
+  PCUDA_BUILTIN_CALL(__acpp_sscp_memory_fence(
+      __acpp_sscp_memory_scope::device, __acpp_sscp_memory_order::seq_cst));
+}
+
+inline void __threadfence_system() {
+  PCUDA_BUILTIN_CALL(__acpp_sscp_memory_fence(
+      __acpp_sscp_memory_scope::system, __acpp_sscp_memory_order::seq_cst));
+}
+
+inline void __threadfence_block() {
+  PCUDA_BUILTIN_CALL(__acpp_sscp_memory_fence(
+      __acpp_sscp_memory_scope::work_group, __acpp_sscp_memory_order::seq_cst));
+}
+
 ///////////////// Kernel launch mechanisms ////////////////////
 
 struct __pcuda_dummy_configuration_t {};

@@ -235,6 +235,7 @@ Supported features in device code include:
 |`__syncwarp` | |
 | Math functions from `<math.h>`/`<cmath>` | |
 | CUDA/HIP vector types | |
+|`__threadfence[_system,_block]` | |
 |`atomicAdd[_system,_block]` | `int`, `uint`, `ull`, `float`, `double` types |
 |`atomicSub[_system,_block]` | `int`, `uint` types |
 |`atomicExch[_system,_block]` | `int`, `uint`, `ull`, `float` types |
