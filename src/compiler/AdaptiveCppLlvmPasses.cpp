@@ -224,8 +224,8 @@ return {
               if(!CompilationStateManager::getASTPassState().isDeviceCompilation())
                 FPM.addPass(LoopsParallelMarkerPass{});
             });
-#endif
           }
+#endif
         }
   };
 }
