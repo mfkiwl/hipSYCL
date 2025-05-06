@@ -361,6 +361,46 @@ if(BUILD_CLANG_PLUGIN)
       message(SEND_ERROR "CLANG_INCLUDE_PATH ${CLANG_INCLUDE_PATH} does not exist. Please provide clang's internal include path manually: Find the directory where __clang_cuda_runtime_wrapper.h is. Provide this directory for older ROCm versions and the parent directory for newer ones.")
     endif()
     if(WITH_ROCM_BACKEND)
+      # Check if we're building against ROCm LLVM. This code checks if
+      # CLANG_EXECUTABLE_PATH is located within ROCM_PATH.
+      # Note: This might fail in ROCm distributions where ROCm is strongly decomposed
+      # (spack?) but it is more reliable than just parsing the output of clang++ --version.
+      # This is then later used to decide whether we need to make exemptions
+      # from LLVM version compatibility checks.
+      file(GLOB_RECURSE ROCM_FOUND_FILES FOLLOW_SYMLINKS "${ROCM_PATH}/*")
+      if ("${CLANG_EXECUTABLE_PATH}" IN_LIST ROCM_FOUND_FILES)
+        message(STATUS "File ${CLANG_EXECUTABLE_PATH} found in ${ROCM_PATH}.")
+        set(USE_ROCM_LLVM true)
+      else()
+        message(STATUS "File ${CLANG_EXECUTABLE_PATH} not found in ${ROCM_PATH}.")
+        set(USE_ROCM_LLVM false)
+      endif()
+
+      find_program(ROCM_CLANG_PATH NAMES clang++ HINTS ${ROCM_PATH} ${ROCM_PATH}/bin ${ROCM_PATH}/llvm/bin NO_DEFAULT_PATH CACHE STRING)
+      if(ROCM_CLANG_PATH)
+        # Figure out ROCm LLVM version - this is used to check whether the AdaptiveCpp LLVM version
+        # is compatible with ROCm for SSCP.
+        # Note: We have an extra code path here in addition to the one below to find out
+        # the ROCm version for robustness, since some ROCm distributions identify differently!
+        message(STATUS "Found ROCm clang: ${ROCM_CLANG_PATH}")
+        execute_process(COMMAND ${ROCM_CLANG_PATH} "--version"
+          OUTPUT_VARIABLE ROCM_CLANG_VERBOSE_OUTPUT)
+        string(REGEX MATCH "clang version ([0-9]+).([0-9]+).([0-9]+)" ROCM_CLANG_VERSION ${ROCM_CLANG_VERBOSE_OUTPUT})
+        if(ROCM_CLANG_VERSION)
+          set(ROCM_LLVM_MAJOR ${CMAKE_MATCH_1})
+          set(ROCM_LLVM_MINOR ${CMAKE_MATCH_2})
+          set(ROCM_LLVM_PATCH ${CMAKE_MATCH_3})
+          message(STATUS "ROCm LLVM version: ${ROCM_LLVM_MAJOR}.${ROCM_LLVM_MINOR}.${ROCM_LLVM_PATCH}")
+          # If we want to target ROCm with SSCP, then AdaptiveCpp LLVM must be <= ROCm LLVM
+          if(ROCM_LLVM_MAJOR AND LLVM_VERSION_MAJOR AND WITH_SSCP_COMPILER)
+            if(${LLVM_VERSION_MAJOR} GREATER ${ROCM_LLVM_MAJOR})
+              message(SEND_ERROR "AdaptiveCpp LLVM version (${LLVM_VERSION_MAJOR}) must be <= ROCm LLVM version (${ROCM_LLVM_MAJOR}) for the AdaptiveCpp generic JIT compiler.")
+            endif()
+          endif()
+        endif()
+      endif()
+      # Find ROCm version - this may not work for ROCm distributions repackaged
+      # by Linux distributions as they may be missing the roc-* identifier in the output :(
       execute_process(COMMAND ${CLANG_EXECUTABLE_PATH} "--version"
         OUTPUT_VARIABLE CLANG_VERBOSE_OUTPUT)
       string(REGEX MATCH "clang version [0-9]+.[0-9]+.[0-9]+ \\(.+ roc-([0-9]+).([0-9]+).([0-9]+)" AMD_CLANG_VERSION ${CLANG_VERBOSE_OUTPUT})
@@ -402,7 +442,17 @@ if(BUILD_CLANG_PLUGIN)
       set(WITH_ACCELERATED_CPU false)
     endif()
   endif()
-  if(NOT ACPP_EXPERIMENTAL_LLVM)
+
+  set(ENFORCE_COMPATIBLE_LLVM true)
+  if(USE_ROCM_LLVM)
+    if(ACPP_COMPILER_FEATURE_PROFILE STREQUAL "minimal")
+      set(ENFORCE_COMPATIBLE_LLVM false)
+    endif()
+    if(NOT ${WITH_SSCP_COMPILER} AND NOT ${WITH_STDPAR_COMPILER} AND NOT ${WITH_ACCELERATED_CPU} AND NOT ${WITH_REFLECTION_BUILTINS})
+      set(ENFORCE_COMPATIBLE_LLVM false)
+    endif()
+  endif()
+  if(ENFORCE_COMPATIBLE_LLVM AND NOT ACPP_EXPERIMENTAL_LLVM)
     if(${LLVM_VERSION_MAJOR} GREATER 20)
       message(SEND_ERROR "LLVM versions greater than 20 are not yet tested/supported, use -DACPP_EXPERIMENTAL_LLVM=ON if you still wish to try your luck.")
     endif()
