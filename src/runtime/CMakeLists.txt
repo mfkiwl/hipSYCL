@@ -308,7 +308,7 @@ if(WITH_CPU_BACKEND)
     omp/omp_queue.cpp
     omp/omp_phys_mem.cpp)
 
-  if(TARGET omp) # ACPP_LLVM_COMPONENT with openmp active
+  if(TARGET omp AND ACPP_LLVM_COMPONENT) # ACPP_LLVM_COMPONENT with openmp active
     set(OpenMP_CXX_INCLUDE_DIRS ${CMAKE_INSTALL_FULL_INCLUDEDIR})
     get_target_property(hipSYCL_OpenMP_CXX_LIBRARIES omp LINK_LIBRARIES)
     string(JOIN " " hipSYCL_OpenMP_CXX_LIBRARIES ${hipSYCL_OpenMP_CXX_LIBRARIES})
