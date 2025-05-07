@@ -7,6 +7,7 @@
 Operating system support currently strongly focuses on Linux.
 On Mac, only the CPU backend is expected to work. For the generic JIT compilation flow, we recommend [linking AdaptiveCpp into LLVM using a 2-stage build](#building-an-llvm-toolchain-with-adaptivecpp-linked-in-experimental-but-also-for-windows).
 Windows support with CPU and CUDA backends is expected to work when [linking AdaptiveCpp into LLVM](#building-an-llvm-toolchain-with-adaptivecpp-linked-in-experimental-but-also-for-windows).
+For Windows, you may also [download](https://nightly.link/AdaptiveCpp/AdaptiveCpp/workflows/windows-acppllvm/develop/AdaptiveCpp-LLVM20-Win.zip) nightly binaries for AdaptiveCpp from the `develop` branch.
 
 ## Installation from source (Linux)
 
