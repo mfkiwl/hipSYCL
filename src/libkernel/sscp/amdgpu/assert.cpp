@@ -24,7 +24,7 @@ HIPSYCL_SSCP_BUILTIN void __acpp_sscp_assert_fail(const char *assertion,
   __acpp_sscp_print(file);
   __acpp_sscp_print("', function '");
   __acpp_sscp_print(function);
-  __acpp_sscp_print("' (kernel abortion is not yet supported for this target)\n");
+  __builtin_trap();
 }
 
 HIPSYCL_SSCP_BUILTIN void
@@ -36,5 +36,5 @@ __acpp_sscp_glibcxx_assert_fail(const char *file, __acpp_int32 line,
   __acpp_sscp_print(file);
   __acpp_sscp_print("', function '");
   __acpp_sscp_print(function);
-  __acpp_sscp_print("' (kernel abortion is not yet supported for this target)\n");
+  __builtin_trap();
 }
