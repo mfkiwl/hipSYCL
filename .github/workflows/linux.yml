@@ -77,7 +77,7 @@ jobs:
     - name: build AdaptiveCpp
       run: |
         mkdir build && cd build
-        cmake -GNinja -DCMAKE_CXX_COMPILER=/usr/bin/clang++-${{matrix.docker.clang}} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCLANG_EXECUTABLE_PATH=/usr/bin/clang++-${{matrix.docker.clang}} -DLLVM_DIR=/usr/lib/llvm-${{matrix.docker.clang}}/cmake -DWITH_CUDA_BACKEND=ON -DWITH_ROCM_BACKEND=ON -DWITH_LEVEL_ZERO_BACKEND=ON -DCMAKE_INSTALL_PREFIX=`pwd`/install -DCUDA_TOOLKIT_ROOT_DIR=/opt/cuda -DROCM_PATH=/opt/rocm ..
+        cmake -GNinja -DCMAKE_CXX_COMPILER=/usr/bin/clang++-${{matrix.docker.clang}} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCLANG_EXECUTABLE_PATH=/usr/bin/clang++-${{matrix.docker.clang}} -DLLVM_DIR=/usr/lib/llvm-${{matrix.docker.clang}}/cmake -DWITH_CUDA_BACKEND=ON -DWITH_ROCM_BACKEND=ON -DWITH_LEVEL_ZERO_BACKEND=ON -DCMAKE_INSTALL_PREFIX=`pwd`/install -DCUDA_TOOLKIT_ROOT_DIR=/opt/cuda -DROCM_PATH=/opt/rocm -DACPP_EXPERIMENTAL_LLVM=ON ..
         ninja install
         cp /opt/cuda/lib64/stubs/libcuda.so `pwd`/install/lib/libcuda.so
         cp /opt/cuda/lib64/stubs/libcuda.so `pwd`/install/lib/libcuda.so.1
