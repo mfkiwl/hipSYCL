@@ -367,12 +367,11 @@ if(BUILD_CLANG_PLUGIN)
       # (spack?) but it is more reliable than just parsing the output of clang++ --version.
       # This is then later used to decide whether we need to make exemptions
       # from LLVM version compatibility checks.
-      file(GLOB_RECURSE ROCM_FOUND_FILES FOLLOW_SYMLINKS "${ROCM_PATH}/*")
+      file(GLOB_RECURSE ROCM_FOUND_FILES FOLLOW_SYMLINKS "${ROCM_PATH}/bin/*" "${ROCM_PATH}/llvm/bin/*" "${ROCM_PATH}/lib/llvm/bin/*")
       if ("${CLANG_EXECUTABLE_PATH}" IN_LIST ROCM_FOUND_FILES)
-        message(STATUS "File ${CLANG_EXECUTABLE_PATH} found in ${ROCM_PATH}.")
+        message(STATUS "${CLANG_EXECUTABLE_PATH} found in ${ROCM_PATH}; assuming that we are building against ROCm LLVM")
         set(USE_ROCM_LLVM true)
       else()
-        message(STATUS "File ${CLANG_EXECUTABLE_PATH} not found in ${ROCM_PATH}.")
         set(USE_ROCM_LLVM false)
       endif()
 
