@@ -24,6 +24,9 @@
 
 #include "sycl_test_suite.hpp"
 #include <boost/test/tools/old/interface.hpp>
+#ifdef LIB_NUMA_AVAILABLE
+#include <numa.h>
+#endif
 
 BOOST_FIXTURE_TEST_SUITE(extension_tests, reset_device_fixture)
 
@@ -107,9 +110,7 @@ BOOST_AUTO_TEST_CASE(custom_pfwi_synchronization_extension) {
 
       auto acc = buf.get_access<cl::sycl::access::mode::read_write>(cgh);
       auto scratch =
-          cl::sycl::accessor<int, 1, cl::sycl::access::mode::read_write,
-                             cl::sycl::access::target::local>{local_size,
-                                                                    cgh};
+          cl::sycl::local_accessor<int, 1>{local_size, cgh};
 
       cgh.parallel_for_work_group<class pfwi_dispatch>(
         cl::sycl::range<1>{global_size / local_size},
@@ -240,7 +241,7 @@ template<class Name, int D>
 class nd_kernel_name;
 
 BOOST_AUTO_TEST_CASE_TEMPLATE(scoped_parallelism_api, _dimensions,
-                              test_dimensions::type) {
+                              test_dimensions) {
   constexpr int d = _dimensions::value;
   test_distribute_groups<nd_kernel_name<class ScopedParallelismDistrGroups, d>,
                          d>();
@@ -616,7 +617,7 @@ BOOST_AUTO_TEST_CASE(cg_property_preferred_group_size) {
            [&](sycl::handler &cgh) {
              cgh.parallel_for<class property_preferred_group_size3>(
                  sycl::range{10,10,10}, [=](sycl::id<3> idx) {
-                   if (idx[0] == 0 && idx[1] == 0) {
+                   if (idx[0] == 0 && idx[1] == 0 && idx[2] == 0) {
 #if defined(DEVICE_MODEL)
                     __acpp_if_target_device(
                      gsize[2] = get_total_group_size();
@@ -1220,6 +1221,128 @@ BOOST_AUTO_TEST_CASE(sycl_specialized) {
   }
 
   sycl::free(data, q);
+}
+#endif
+#ifdef ACPP_EXT_TARGET_NUMA_NODE_PROPERTY
+BOOST_AUTO_TEST_CASE(target_numa_node_property) {
+  using namespace cl;
+  sycl::queue q{
+    sycl::property_list{
+      sycl::property::queue::in_order{}}
+    };
+
+  std::size_t n = 1024;
+
+#ifdef LIB_NUMA_AVAILABLE
+
+  // Using the property without specifying any NUMA node
+  int *ptr_numa_no_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{}}});
+
+  // alloc on the first NUMA node. Every cpu should have at least one
+  // NUMA node
+  int *ptr_numa_first_available_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{0}}});
+
+  // allocate on the last available NUMA node
+  int *ptr_numa_max_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{ sycl::property::usm::AdaptiveCpp_target_numa_node{
+          {static_cast<size_t>(numa_max_node())}}});
+
+  // allocate on a non available NUMA node
+  int *ptr_numa_non_available_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{ sycl::property::usm::AdaptiveCpp_target_numa_node{
+          {static_cast<size_t>(numa_max_node())+1}}});
+
+  //store all available NUMA nodes in a vector
+  struct bitmask *available_bm = numa_get_mems_allowed();
+  std::vector<size_t> available_nodes_vec;
+  for(size_t node_id = 0; node_id <= numa_max_node(); node_id++){
+    if(numa_bitmask_isbitset(available_bm, node_id) != 0){
+      available_nodes_vec.push_back(node_id);
+    }
+  }
+
+  //allocatre on all available NUMA nodes
+  int *ptr_numa_all_available_nodes = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{ sycl::property::usm::AdaptiveCpp_target_numa_node{
+      available_nodes_vec}});
+
+  numa_free_nodemask(available_bm);
+
+  q.wait();
+
+  // - AdaptiveCpp_target_numa_node is only availble on the OpenMP backend.
+  // Using the property with any other backend should have no effect.
+  // - Verify with numa_available() that the system support
+  // NUMA policy
+  // - Even when the system support NUMA policy, NUMA node may not
+  // be available. If numa_get_mems_allowed returns an empty bitmask, this
+  // means that no NUMA node is available. In this case we expect all allocations
+  // to fail
+  sycl::backend b = q.get_device().get_backend();
+  if(b == sycl::backend::omp && numa_available() != -1){
+    if(!available_nodes_vec.empty()){
+      BOOST_TEST(ptr_numa_no_node == nullptr);
+      BOOST_TEST(ptr_numa_first_available_node != nullptr);
+      BOOST_TEST(ptr_numa_max_node != nullptr);
+      BOOST_TEST(ptr_numa_non_available_node == nullptr);
+      BOOST_TEST(ptr_numa_all_available_nodes != nullptr);
+    }
+    else{
+      BOOST_TEST(ptr_numa_no_node == nullptr);
+      BOOST_TEST(ptr_numa_first_available_node == nullptr);
+      BOOST_TEST(ptr_numa_max_node == nullptr);
+      BOOST_TEST(ptr_numa_non_available_node == nullptr);
+      BOOST_TEST(ptr_numa_all_available_nodes == nullptr);
+    }
+  }
+  else{
+    BOOST_TEST(ptr_numa_no_node != nullptr);
+    BOOST_TEST(ptr_numa_first_available_node != nullptr);
+    BOOST_TEST(ptr_numa_max_node != nullptr);
+    BOOST_TEST(ptr_numa_non_available_node != nullptr);
+    BOOST_TEST(ptr_numa_all_available_nodes != nullptr);
+  }
+
+  sycl::free(ptr_numa_no_node, q);
+  sycl::free(ptr_numa_first_available_node, q);
+  sycl::free(ptr_numa_max_node, q);
+  sycl::free(ptr_numa_non_available_node, q);
+  sycl::free(ptr_numa_all_available_nodes, q);
+
+#else
+  int *ptr_no_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{}}});
+  int *ptr_numa_1 = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{1}}});
+  int *ptr_numa_99 = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{99}}});
+
+  q.wait();
+
+  BOOST_TEST(ptr_no_node != nullptr);
+  BOOST_TEST(ptr_numa_1 != nullptr);
+  BOOST_TEST(ptr_numa_99 != nullptr);
+
+  sycl::free(ptr_no_node, q);
+  sycl::free(ptr_numa_1, q);
+  sycl::free(ptr_numa_99, q);
+#endif
+
 }
 #endif
 #ifdef SYCL_KHR_DEFAULT_CONTEXT

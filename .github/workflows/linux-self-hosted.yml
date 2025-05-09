@@ -8,7 +8,7 @@ jobs:
     runs-on: [self-hosted, gpu-nvidia]
     strategy:
       matrix:
-        clang_version: ['15']
+        clang_version: ['18']
         cuda: ['11.0']
         nvhpc_version: ['22.11']
     steps:
@@ -23,11 +23,10 @@ jobs:
         make -j16 install
         cp /.singularity.d/libs/libcuda.* `pwd`/install/lib/
     - name: build generic SSCP tests
-      if: matrix.clang_version >= 14
       run: |
         mkdir ${GITHUB_WORKSPACE}/build/tests-sscp
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
-        cmake -DACPP_TARGETS="generic" -DAdaptiveCpp_DIR=${GITHUB_WORKSPACE}/build/install/lib/cmake/AdaptiveCpp -DWITH_PSTL_TESTS=ON ${GITHUB_WORKSPACE}/tests
+        cmake -DACPP_TARGETS="generic" -DAdaptiveCpp_DIR=${GITHUB_WORKSPACE}/build/install/lib/cmake/AdaptiveCpp -DWITH_PSTL_TESTS=ON -DWITH_PCUDA_TESTS=ON ${GITHUB_WORKSPACE}/tests
         make -j16
     - name: build CUDA tests (integrated multipass)
       run: |
@@ -75,6 +74,10 @@ jobs:
       run: |
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
         ACPP_VISIBILITY_MASK="omp;cuda" ./pstl_tests
+    - name: run PCUDA CUDA tests (SSCP)
+      run: |
+        cd ${GITHUB_WORKSPACE}/build/tests-sscp
+        ACPP_VISIBILITY_MASK="omp;cuda" ./pcuda_tests
     #- name: run CUDA tests (nvc++)
     #  run: |
     #    echo "Running tests on CUDA..."
@@ -92,13 +95,17 @@ jobs:
       run: |
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
         ACPP_VISIBILITY_MASK=omp LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/build/install/lib ./pstl_tests
+    - name: run PCUDA CPU tests (SSCP)
+      run: |
+        cd ${GITHUB_WORKSPACE}/build/tests-sscp
+        ACPP_VISIBILITY_MASK=omp LD_LIBRARY_PATH=${GITHUB_WORKSPACE}/build/install/lib ./pcuda_tests
   test-gpu-amd:
     if: github.repository_id == '140986400'
     name: AMD with clang ${{ matrix.clang_version }}
     runs-on: [self-hosted, gpu-amd]
     strategy:
       matrix:
-        clang_version: ['15']
+        clang_version: ['18']
         cuda: ['11.0'] # Just to be able to build the backend for explicit multipass
     steps:
     - uses: actions/checkout@v4
@@ -111,11 +118,10 @@ jobs:
         cmake -DCMAKE_CXX_COMPILER=/usr/bin/clang++-${{matrix.clang_version}} -DCLANG_EXECUTABLE_PATH=/usr/bin/clang++-${{matrix.clang_version}} -DLLVM_DIR=/usr/lib/llvm-${{matrix.clang_version}}/cmake -DWITH_CUDA_BACKEND=ON -DWITH_ROCM_BACKEND=ON -DCMAKE_INSTALL_PREFIX=`pwd`/install -DCUDA_TOOLKIT_ROOT_DIR=/opt/cuda-${{matrix.cuda}} -DROCM_PATH=/opt/rocm ..
         make -j3 install
     - name: build generic SSCP tests
-      if: matrix.clang_version >= 14
       run: |
         mkdir ${GITHUB_WORKSPACE}/build/tests-sscp
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
-        cmake -DACPP_TARGETS="generic" -DAdaptiveCpp_DIR=${GITHUB_WORKSPACE}/build/install/lib/cmake/AdaptiveCpp -DWITH_PSTL_TESTS=ON ${GITHUB_WORKSPACE}/tests
+        cmake -DACPP_TARGETS="generic" -DAdaptiveCpp_DIR=${GITHUB_WORKSPACE}/build/install/lib/cmake/AdaptiveCpp -DWITH_PSTL_TESTS=ON -DWITH_PCUDA_TESTS=ON ${GITHUB_WORKSPACE}/tests
         make -j3
     - name: build ROCm tests (integrated multipass)
       run: |
@@ -148,13 +154,17 @@ jobs:
       run: |
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
         ACPP_VISIBILITY_MASK="omp;hip" ./pstl_tests
+    - name: run PCUDA ROCm tests (SSCP)
+      run: |
+        cd ${GITHUB_WORKSPACE}/build/tests-sscp
+        ACPP_VISIBILITY_MASK="omp;hip" ./pcuda_tests
   test-gpu-intel:
     if: github.repository_id == '140986400'
     name: Intel with clang ${{ matrix.clang_version }}
     runs-on: [self-hosted, gpu-intel]
     strategy:
       matrix:
-        clang_version: ['15']
+        clang_version: ['18']
     steps:
     - uses: actions/checkout@v4
     - name: clear JIT cache
@@ -169,7 +179,7 @@ jobs:
       run: |
         mkdir ${GITHUB_WORKSPACE}/build/tests-sscp
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
-        cmake -DACPP_TARGETS="generic" -DAdaptiveCpp_DIR=${GITHUB_WORKSPACE}/build/install/lib/cmake/AdaptiveCpp -DWITH_PSTL_TESTS=ON ${GITHUB_WORKSPACE}/tests
+        cmake -DACPP_TARGETS="generic" -DAdaptiveCpp_DIR=${GITHUB_WORKSPACE}/build/install/lib/cmake/AdaptiveCpp -DWITH_PSTL_TESTS=ON -DWITH_PCUDA_TESTS=ON  ${GITHUB_WORKSPACE}/tests
         make -j3
     - name: run Intel tests (OpenCL)
       run: |
@@ -183,3 +193,7 @@ jobs:
       run: |
         cd ${GITHUB_WORKSPACE}/build/tests-sscp
         LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/ ACPP_VISIBILITY_MASK="omp;ocl:Graphics.*" ./pstl_tests
+    - name: run PCUDA Intel tests (OpenCL)
+      run: |
+        cd ${GITHUB_WORKSPACE}/build/tests-sscp
+        LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/ ACPP_VISIBILITY_MASK="omp;ocl:Graphics.*" ./pcuda_tests

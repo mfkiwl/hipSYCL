@@ -4,7 +4,7 @@ AdaptiveCpp supports automatic offloading of C++ standard algorithms.
 
 ## Installation & dependencies
 
-C++ standard parallelism offload requires LLVM >= 14. It is automatically enabled when a sufficiently new LLVM is detected. Requires `cmake -DACPP_COMPILER_FEATURE_PROFILE=full` (this is the default setting) at cmake configure time.
+C++ standard parallelism offload requires LLVM >= 15. It is automatically enabled when a sufficiently new LLVM is detected. Requires `cmake -DACPP_COMPILER_FEATURE_PROFILE=full` (this is the default setting) at cmake configure time.
 C++ standard parallelism offload currently is only supported in conjunction with `libstdc++` >= 11. Other standard C++ standard library versions may or may not work. Support for `libc++` is likely easy to add if there is demand.
 
 ## Using accelerated C++ standard parallelism
@@ -29,6 +29,7 @@ Offloading is implemented for the following STL algorithms:
 |`copy` | |
 |`copy_n` | |
 |`copy_if` | |
+|`move` | |
 |`fill` | |
 |`fill_n` | |
 |`generate` | |
@@ -37,11 +38,15 @@ Offloading is implemented for the following STL algorithms:
 |`replace_if` | |
 |`replace_copy` | |
 |`replace_copy_if` | |
+|`reverse` | |
+|`reverse_copy` | |
 |`transform_reduce` | all overloads |
 |`reduce` | all overloads |
 |`any_of` | |
 |`all_of` | |
 |`none_of` | |
+|`count` | |
+|`count_if` | |
 |`merge` | |
 |`sort` | may not scale optimally for large problems |
 |`inclusive_scan` | |

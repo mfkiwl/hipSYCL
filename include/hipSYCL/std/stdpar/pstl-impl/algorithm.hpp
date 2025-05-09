@@ -209,6 +209,29 @@ ForwardIt2 copy_n(hipsycl::stdpar::par_unseq,
       count, ForwardIt2, offloader, fallback, first, count, result);
 }
 
+template <class ForwardIt1, class ForwardIt2>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2 move(hipsycl::stdpar::par_unseq,
+                                          ForwardIt1 first, ForwardIt1 last,
+                                          ForwardIt2 d_first) {
+  auto offloader = [&](auto& queue){
+    ForwardIt2 d_last = d_first;
+    std::advance(d_last, std::distance(first, last));
+    hipsycl::algorithms::move(queue, first, last, d_first);
+    return d_last;
+  };
+
+  auto fallback = [&]() {
+    return std::move(hipsycl::stdpar::par_unseq_host_fallback, first, last,
+                     d_first);
+  };
+
+  HIPSYCL_STDPAR_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::move{},
+                                 hipsycl::stdpar::par_unseq{}),
+      std::distance(first, last), ForwardIt2, offloader, fallback, first,
+      HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), d_first);
+}
+
 template<class ForwardIt, class T >
 HIPSYCL_STDPAR_ENTRYPOINT
 void fill(hipsycl::stdpar::par_unseq,
@@ -384,6 +407,48 @@ HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2 replace_copy_if(
       HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), d_first, p, new_value);
 }
 
+template<class BidirIt>
+HIPSYCL_STDPAR_ENTRYPOINT void reverse (hipsycl::stdpar::par_unseq,
+                                        BidirIt first, BidirIt last) {
+  auto offloader = [&](auto& queue) {
+    hipsycl::algorithms::reverse(queue, first, last);
+  };
+
+  auto fallback = [&]() {
+    std::reverse(hipsycl::stdpar::par_unseq_host_fallback, first, last);
+  };
+
+  HIPSYCL_STDPAR_OFFLOAD_NORET(
+    hipsycl::stdpar::algorithm(
+                          hipsycl::stdpar::algorithm_category::reverse{},
+                          hipsycl::stdpar::par_unseq{}),
+    std::distance(first, last), offloader, fallback, first,
+    HIPSYCL_STDPAR_NO_PTR_VALIDATION(last));
+}
+
+template<class BidirIt, class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt reverse_copy (hipsycl::stdpar::par_unseq,
+                                                  BidirIt first, BidirIt last,
+                                                  ForwardIt d_first) {
+  auto offloader = [&](auto& queue) {
+    ForwardIt d_last = d_first;
+    std::advance(d_last, std::distance(first, last));
+    hipsycl::algorithms::reverse_copy(queue, first, last, d_first);
+    return d_last;
+  };
+
+  auto fallback = [&]() {
+    return std::reverse_copy(hipsycl::stdpar::par_unseq_host_fallback, first, last,
+                     d_first);
+  };
+
+  HIPSYCL_STDPAR_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::reverse_copy{},
+                                 hipsycl::stdpar::par_unseq{}),
+      std::distance(first, last), ForwardIt, offloader, fallback, first,
+      HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), d_first);
+}
+
 /*
 template <class ForwardIt, class T>
 HIPSYCL_STDPAR_ENTRYPOINT ForwardIt find(const hipsycl::stdpar::par_unseq, ForwardIt first,
@@ -500,6 +565,82 @@ bool none_of(hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last,
 }
 
 
+template<class ForwardIt, class T>
+HIPSYCL_STDPAR_ENTRYPOINT typename std::iterator_traits<ForwardIt>::difference_type
+count(hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last,
+         const T& value) {
+  auto offloader = [&](auto& queue) {
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+
+    if(std::distance(first, last) == 0)
+      return DiffT{};
+
+    auto  output_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::host>();
+    auto reduction_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::device>();
+
+    DiffT *out = output_scratch_group.obtain<DiffT>(1);
+    hipsycl::algorithms::count(queue, reduction_scratch_group, first,
+                               last, out, value);
+    queue.wait();
+    return *out;
+  };
+
+  auto fallback = [&]() {
+    return std::count(hipsycl::stdpar::par_unseq_host_fallback, first,
+                         last, value);
+  };
+
+  HIPSYCL_STDPAR_BLOCKING_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::count{},
+                                 hipsycl::stdpar::par_unseq{}),
+      std::distance(first, last), typename std::iterator_traits<ForwardIt>::difference_type,
+      offloader, fallback, first, HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), value);
+}
+
+
+template<class ForwardIt, class UnaryPredicate>
+HIPSYCL_STDPAR_ENTRYPOINT typename std::iterator_traits<ForwardIt>::difference_type
+count_if(hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last,
+         UnaryPredicate p) {
+  auto offloader = [&](auto& queue) {
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+
+    if(std::distance(first, last) == 0)
+      return DiffT{};
+
+    auto  output_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::host>();
+    auto reduction_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::device>();
+
+    DiffT *out = output_scratch_group.obtain<DiffT>(1);
+    hipsycl::algorithms::count_if(queue, reduction_scratch_group, first,
+                                  last, out, p);
+    queue.wait();
+    return *out;
+  };
+
+  auto fallback = [&]() {
+    return std::count_if(hipsycl::stdpar::par_unseq_host_fallback, first,
+                         last, p);
+  };
+
+  HIPSYCL_STDPAR_BLOCKING_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::count_if{},
+                                 hipsycl::stdpar::par_unseq{}),
+      std::distance(first, last), typename std::iterator_traits<ForwardIt>::difference_type,
+      offloader, fallback, first, HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), p);
+}
 
 
 template <class RandomIt>
@@ -795,6 +936,29 @@ ForwardIt2 copy_n(hipsycl::stdpar::par,
       count, ForwardIt2, offloader, fallback, first, count, result);
 }
 
+template <class ForwardIt1, class ForwardIt2>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2 move(const hipsycl::stdpar::par,
+                                          ForwardIt1 first, ForwardIt1 last,
+                                          ForwardIt2 d_first) {
+  auto offloader = [&](auto& queue){
+    ForwardIt2 d_last = d_first;
+    std::advance(d_last, std::distance(first, last));
+    hipsycl::algorithms::move(queue, first, last, d_first);
+    return d_last;
+  };
+
+  auto fallback = [&]() {
+    return std::move(hipsycl::stdpar::par_host_fallback, first, last,
+                     d_first);
+  };
+
+  HIPSYCL_STDPAR_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::move{},
+                                 hipsycl::stdpar::par{}),
+      std::distance(first, last), ForwardIt2, offloader, fallback, first,
+      HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), d_first);
+}
+
 template<class ForwardIt, class T >
 HIPSYCL_STDPAR_ENTRYPOINT
 void fill(hipsycl::stdpar::par,
@@ -972,6 +1136,48 @@ HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2 replace_copy_if(
       HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), d_first, p, new_value);
 }
 
+template<class BidirIt>
+HIPSYCL_STDPAR_ENTRYPOINT void reverse (hipsycl::stdpar::par,
+                                        BidirIt first, BidirIt last) {
+  auto offloader = [&](auto& queue) {
+    hipsycl::algorithms::reverse(queue, first, last);
+  };
+
+  auto fallback = [&]() {
+    std::reverse(hipsycl::stdpar::par_host_fallback, first, last);
+  };
+
+  HIPSYCL_STDPAR_OFFLOAD_NORET(
+    hipsycl::stdpar::algorithm(
+                          hipsycl::stdpar::algorithm_category::reverse{},
+                          hipsycl::stdpar::par{}),
+    std::distance(first, last), offloader, fallback, first,
+    HIPSYCL_STDPAR_NO_PTR_VALIDATION(last));
+}
+
+template<class BidirIt, class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt reverse_copy (hipsycl::stdpar::par,
+                                                  BidirIt first, BidirIt last,
+                                                  ForwardIt d_first) {
+  auto offloader = [&](auto& queue) {
+    ForwardIt d_last = d_first;
+    std::advance(d_last, std::distance(first, last));
+    hipsycl::algorithms::reverse_copy(queue, first, last, d_first);
+    return d_last;
+  };
+
+  auto fallback = [&]() {
+    return std::reverse_copy(hipsycl::stdpar::par_host_fallback, first, last,
+                     d_first);
+  };
+
+  HIPSYCL_STDPAR_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::reverse_copy{},
+                                 hipsycl::stdpar::par{}),
+      std::distance(first, last), ForwardIt, offloader, fallback, first,
+      HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), d_first);
+}
+
 /*
 template <class ForwardIt, class T>
 HIPSYCL_STDPAR_ENTRYPOINT ForwardIt find(const hipsycl::stdpar::par, ForwardIt first,
@@ -1086,6 +1292,85 @@ bool none_of(hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
       std::distance(first, last), bool, offloader, fallback, first,
       HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), p);
 }
+
+
+template<class ForwardIt, class T>
+HIPSYCL_STDPAR_ENTRYPOINT typename std::iterator_traits<ForwardIt>::difference_type
+count(hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
+         const T& value) {
+  auto offloader = [&](auto& queue) {
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+
+    if(std::distance(first, last) == 0)
+      return DiffT{};
+
+    auto  output_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::host>();
+    auto reduction_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::device>();
+
+    DiffT *out = output_scratch_group.obtain<DiffT>(1);
+    hipsycl::algorithms::count(queue, reduction_scratch_group, first,
+                               last, out, value);
+    queue.wait();
+    return *out;
+  };
+
+  auto fallback = [&]() {
+    return std::count(hipsycl::stdpar::par_host_fallback, first,
+                         last, value);
+  };
+
+  HIPSYCL_STDPAR_BLOCKING_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::count{},
+                                 hipsycl::stdpar::par{}),
+      std::distance(first, last), typename std::iterator_traits<ForwardIt>::difference_type,
+      offloader, fallback, first, HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), value);
+}
+
+
+template<class ForwardIt, class UnaryPredicate>
+HIPSYCL_STDPAR_ENTRYPOINT typename std::iterator_traits<ForwardIt>::difference_type
+count_if(hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
+         UnaryPredicate p) {
+  auto offloader = [&](auto& queue) {
+  using DiffT = typename std::iterator_traits<ForwardIt>::difference_type;
+
+    if(std::distance(first, last) == 0)
+      return DiffT{};
+
+    auto  output_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::host>();
+    auto reduction_scratch_group =
+        hipsycl::stdpar::detail::stdpar_tls_runtime::get()
+            .make_scratch_group<
+                hipsycl::algorithms::util::allocation_type::device>();
+
+    DiffT *out = output_scratch_group.obtain<DiffT>(1);
+    hipsycl::algorithms::count_if(queue, reduction_scratch_group, first,
+                                  last, out, p);
+    queue.wait();
+    return *out;
+  };
+
+  auto fallback = [&]() {
+    return std::count_if(hipsycl::stdpar::par_host_fallback, first,
+                         last, p);
+  };
+
+  HIPSYCL_STDPAR_BLOCKING_OFFLOAD(
+      hipsycl::stdpar::algorithm(hipsycl::stdpar::algorithm_category::count_if{},
+                                 hipsycl::stdpar::par{}),
+      std::distance(first, last), typename std::iterator_traits<ForwardIt>::difference_type,
+      offloader, fallback, first, HIPSYCL_STDPAR_NO_PTR_VALIDATION(last), p);
+}
+
 
 template <class RandomIt>
 HIPSYCL_STDPAR_ENTRYPOINT void sort(hipsycl::stdpar::par, RandomIt first,

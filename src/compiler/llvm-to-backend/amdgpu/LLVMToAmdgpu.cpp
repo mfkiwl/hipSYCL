@@ -65,7 +65,7 @@ std::string getRocmClang(const std::string& RocmPath) {
 #if defined(ACPP_HIPCC_PATH)
     ClangPath = ACPP_HIPCC_PATH;
 #else
-    ClangPath = ACPP_CLANG_PATH;
+    ClangPath = getClangPath();
 #endif
   }
 
@@ -83,23 +83,31 @@ using optional_t = std::optional<T>;
 bool getCommandOutput(const std::string &Program, const llvm::SmallVector<std::string> &Invocation,
                       std::string &Out) {
 
-  auto OutputFile = llvm::sys::fs::TempFile::create("acpp-sscp-query-%%%%%%.txt");
+  bool Create = true;
+  auto consumeError = [&](std::error_code EC) {
+    if(EC) {
+      if(Create)
+        HIPSYCL_DEBUG_WARNING << "LLVMToAmdgpu: Could not create temp file: " << EC.message() << "\n";
+      else
+        HIPSYCL_DEBUG_WARNING << "LLVMToAmdgpu: Could not delete temp file: " << EC.message() << "\n";
+      return false;
+    }
+    return true;
+  };
 
-  std::string OutputFilename = OutputFile->TmpName;
-
-  auto E = OutputFile.takeError();
-  if(E){
-    return false;
-  }
-
-  AtScopeExit DestroyOutputFile([&]() { auto Err = OutputFile->discard(); });
+  llvm::SmallVector<char> OutputFile;
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-query", "txt", OutputFile, llvm::sys::fs::OF_None))) return false;
+  std::string OutputFilename = OutputFile.data();
+  
+  Create = false;
+  AtScopeExit DestroyOutputFile([&]() { consumeError(llvm::sys::fs::remove(OutputFilename)); });
 
   llvm::SmallVector<llvm::StringRef> InvocationRef;
   for(const auto& S: Invocation)
     InvocationRef.push_back(S);
 
   llvm::SmallVector<optional_t<llvm::StringRef>> Redirections;
-  std::string RedirectedOutputFile = OutputFile->TmpName;
+  std::string RedirectedOutputFile = OutputFilename;
   Redirections.push_back(optional_t<llvm::StringRef>{});
   Redirections.push_back(llvm::StringRef{RedirectedOutputFile});
   Redirections.push_back(llvm::StringRef{RedirectedOutputFile});
@@ -109,7 +117,7 @@ bool getCommandOutput(const std::string &Program, const llvm::SmallVector<std::s
     return false;
 
   auto ReadResult =
-    llvm::MemoryBuffer::getFile(OutputFile->TmpName, true);
+    llvm::MemoryBuffer::getFile(OutputFilename, true);
   
   Out = ReadResult.get()->getBuffer();
   return true;
@@ -132,7 +140,18 @@ public:
     
 
     llvm::SmallVector<std::string> Invocation;
+    // Newer ROCm versions don't handle --cuda-gpu-arch well,
+    // while older versions don't handle --offload-arch well.
+    // We do not have a good way to check the ROCm version
+    // in llvm-to-amdgpu currently, *but* we can exploit
+    // that the AdaptiveCpp LLVM version must be <= ROCm LLVM version.
+    // So, by checking for a minimum LLVM version, we also
+    // implicitly check for a minimum ROCm version.
+#if LLVM_VERSION_MAJOR >= 18
+    auto OffloadArchFlag = "--offload-arch="+TargetDevice;
+#else
     auto OffloadArchFlag = "--cuda-gpu-arch="+TargetDevice;
+#endif
     auto RocmPathFlag = "--rocm-path="+std::string{RocmPath};
     auto RocmDeviceLibsFlag = "--rocm-device-lib-path="+DeviceLibsPath;
 
@@ -419,45 +438,54 @@ bool LLVMToAmdgpuTranslator::clangJitLink(llvm::Module& FlavoredModule, std::str
   for(const auto& BC : DeviceLibs)
     addBitcodeFile(BC);
 
-  auto InputFile = llvm::sys::fs::TempFile::create("acpp-sscp-amdgpu-%%%%%%.bc");
-  auto OutputFile = llvm::sys::fs::TempFile::create("acpp-sscp-amdgpu-%%%%%%.hipfb");
-  auto DummyFile = llvm::sys::fs::TempFile::create("acpp-sscp-amdgpu-dummy-%%%%%%.cpp");
-
-  std::string OutputFilename = OutputFile->TmpName;
-
-  auto checkFileError = [&](auto& F) {
-    auto E = F.takeError();
-    if(E){
-      this->registerError("LLVMToAmdgpu: Could not create temp file: "+InputFile->TmpName);
+  bool Create = true;
+  auto consumeError = [&](std::error_code EC) {
+    if(EC) {
+      if(Create)
+        this->registerError("LLVMToAmdgpu: Could not create temp file: " + EC.message());
+      else
+        this->registerError("LLVMToAmdgpu: Could not remove temp file: " + EC.message());
       return false;
     }
     return true;
   };
 
-  if(!checkFileError(InputFile)) return false;
-  if(!checkFileError(DummyFile)) return false;
+  int InputFD = 0, DummyFD = 0;
+  llvm::SmallVector<char> InputFileNameBuf, DummyFileNameBuf;
+  // don't use fs::TempFile, as we can't unlock the file for the clang invocation later... (Windows)
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-amdgpu", "bc", InputFD, InputFileNameBuf, llvm::sys::fs::OF_None))) return false;
+  std::string InputFileName = InputFileNameBuf.data();
 
-  AtScopeExit DestroyInputFile([&]() { auto Err = InputFile->discard(); });
-  AtScopeExit DestroyOutputFile([&]() { auto Err = OutputFile->discard(); });
-  AtScopeExit DestroyDummyFile([&]() { auto Err = DummyFile->discard(); });
-  
-  llvm::raw_fd_ostream InputStream{InputFile->FD, false};
-  llvm::raw_fd_ostream DummyStream{DummyFile->FD, false};
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-amdgpu-dummy", "cpp", DummyFD, DummyFileNameBuf, llvm::sys::fs::OF_None))) return false;
+  std::string DummyFileName = DummyFileNameBuf.data();
 
-  llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
-  InputStream.flush();
-   
-  std::string DummyText = "int main() {}\n";
-  DummyStream.write(DummyText.c_str(), DummyText.size());
-  DummyStream.flush();
+  llvm::SmallVector<char> OutputFile;
+  if(!consumeError(llvm::sys::fs::createTemporaryFile("acpp-sscp-host", "hipfb", OutputFile, llvm::sys::fs::OF_None))) return false;
+  std::string OutputFileName = OutputFile.data();
+
+  Create = false;
+  AtScopeExit DestroyInputFile([&]() { consumeError(llvm::sys::fs::remove(InputFileName)); });
+  AtScopeExit DestroyOutputFile([&]() { consumeError(llvm::sys::fs::remove(OutputFileName)); });
+  AtScopeExit DestroyDummyFile([&]() { consumeError(llvm::sys::fs::remove(DummyFileName)); });
+
+  {
+    llvm::raw_fd_ostream InputStream{InputFD, true};
+    llvm::raw_fd_ostream DummyStream{DummyFD, true};
+
+    llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
+    InputStream.flush();
+
+    std::string DummyText = "int main() {}\n";
+    DummyStream.write(DummyText.c_str(), DummyText.size());
+    DummyStream.flush();
+  }
 
   auto OffloadArchFlag = "--cuda-gpu-arch="+TargetDevice;
-  std::string ClangPath = ACPP_CLANG_PATH;
 
   llvm::SmallVector<std::string> Invocation = {
-      ClangPath, "-x", "hip", "-O3", "-nogpuinc", OffloadArchFlag, "--cuda-device-only",
-        "-Xclang", "-mlink-bitcode-file", "-Xclang", InputFile->TmpName,
-        "-o",  OutputFilename, DummyFile->TmpName
+      getClangPath(), "-x", "hip", "-O3", "-nogpuinc", OffloadArchFlag, "--cuda-device-only",
+        "-Xclang", "-mlink-bitcode-file", "-Xclang", InputFileName,
+        "-o",  OutputFileName, DummyFileName
   };
 
   llvm::SmallVector<llvm::StringRef> InvocationRef;
@@ -481,10 +509,10 @@ bool LLVMToAmdgpuTranslator::clangJitLink(llvm::Module& FlavoredModule, std::str
   }
 
   auto ReadResult =
-      llvm::MemoryBuffer::getFile(OutputFile->TmpName, -1);
+      llvm::MemoryBuffer::getFile(OutputFileName, -1);
 
   if(auto Err = ReadResult.getError()) {
-    this->registerError("LLVMToAmdgpu: Could not read result file"+Err.message());
+    this->registerError("LLVMToAmdgpu: Could not read result file" + Err.message());
     return false;
   }
 

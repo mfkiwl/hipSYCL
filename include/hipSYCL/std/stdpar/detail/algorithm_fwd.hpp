@@ -17,6 +17,8 @@
 
 namespace std {
 
+///////////////////////////// par_unseq policy /////////////////////////////
+
 template <class ForwardIt, class UnaryFunction2>
 HIPSYCL_STDPAR_ENTRYPOINT void for_each(hipsycl::stdpar::par_unseq, ForwardIt first,
                                         ForwardIt last, UnaryFunction2 f);
@@ -55,6 +57,11 @@ HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2 copy_n(hipsycl::stdpar::par_unseq,
                                             ForwardIt1 first, Size count,
                                             ForwardIt2 result);
 
+template <class ForwardIt1, class ForwardIt2>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2 move(hipsycl::stdpar::par_unseq,
+                                          ForwardIt1 first, ForwardIt1 last,
+                                          ForwardIt2 d_first);
+
 template <class ForwardIt, class T>
 HIPSYCL_STDPAR_ENTRYPOINT void fill(hipsycl::stdpar::par_unseq, ForwardIt first,
                                     ForwardIt last, const T &value);
@@ -92,6 +99,14 @@ HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2
 replace_copy_if(hipsycl::stdpar::par_unseq, ForwardIt1 first, ForwardIt1 last,
                 ForwardIt2 d_first, UnaryPredicate p, const T &new_value);
 
+template<class BidirIt>
+HIPSYCL_STDPAR_ENTRYPOINT void reverse (hipsycl::stdpar::par_unseq,
+                                        BidirIt first, BidirIt last);
+
+template<class BidirIt, class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt reverse_copy (hipsycl::stdpar::par_unseq,
+                                                  BidirIt first, BidirIt last,
+                                                  ForwardIt d_first);
 /*
 template <class ForwardIt, class T>
 HIPSYCL_STDPAR_ENTRYPOINT ForwardIt find(hipsycl::stdpar::par_unseq, ForwardIt first,
@@ -123,6 +138,45 @@ HIPSYCL_STDPAR_ENTRYPOINT
 bool none_of(hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last,
             UnaryPredicate p );
 
+template<class ForwardIt, class T>
+HIPSYCL_STDPAR_ENTRYPOINT
+typename std::iterator_traits<ForwardIt>::difference_type
+count( hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last,
+       const T& value );
+
+template<class ForwardIt, class UnaryPredicate>
+HIPSYCL_STDPAR_ENTRYPOINT
+typename std::iterator_traits<ForwardIt>::difference_type
+count_if( hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last,
+         UnaryPredicate p );
+
+///////////////////////////// par policy /////////////////////////////
+
+template <class ForwardIt1, class ForwardIt2>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt2 move(hipsycl::stdpar::par,
+                                          ForwardIt1 first, ForwardIt1 last,
+                                          ForwardIt2 d_first);
+
+template<class BidirIt>
+HIPSYCL_STDPAR_ENTRYPOINT void reverse (hipsycl::stdpar::par,
+                                        BidirIt first, BidirIt last);
+
+template<class BidirIt, class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT ForwardIt reverse_copy (hipsycl::stdpar::par,
+                                                  BidirIt first, BidirIt last,
+                                                  ForwardIt d_first);
+
+template<class ForwardIt, class T>
+HIPSYCL_STDPAR_ENTRYPOINT
+typename std::iterator_traits<ForwardIt>::difference_type
+count( hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
+       const T& value );
+
+template<class ForwardIt, class UnaryPredicate>
+HIPSYCL_STDPAR_ENTRYPOINT
+typename std::iterator_traits<ForwardIt>::difference_type
+count_if( hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
+         UnaryPredicate p );
 }
 
 #endif
