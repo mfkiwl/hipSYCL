@@ -254,7 +254,7 @@ private:
       common::stable_running_hash hash;
       hash(entry.first.data(), entry.first.size());
       for(const auto& s : entry.second)
-        hash(entry.second.data(), entry.second.size());
+        hash(s.data(), s.size());
       _config.unique_hash ^= hash.get_current_hash();
     }
   }
