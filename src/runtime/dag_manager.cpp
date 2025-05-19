@@ -26,9 +26,8 @@ namespace hipsycl {
 namespace rt {
 
 
-dag_build_guard::~dag_build_guard()
-{
-  _mgr->trigger_flush_opportunity();
+dag_build_guard::~dag_build_guard() {
+  _mgr->flush();
 }
 
 dag_manager::dag_manager(runtime *rt)
@@ -156,22 +155,6 @@ void dag_manager::wait(std::size_t node_group_id) {
 
 void dag_manager::register_submitted_ops(dag_node_ptr node) {
   this->_submitted_ops.update_with_submission(node);
-}
-
-void dag_manager::trigger_flush_opportunity()
-{
-  HIPSYCL_DEBUG_INFO << "dag_manager: Checking DAG flush opportunity..."
-                     << std::endl;
-
-  if (application::get_settings().get<setting::scheduler_type>() ==
-      scheduler_type::direct) {
-    // Direct scheduler always needs flushing
-    flush();
-  } else {
-    if (builder()->get_current_dag_size() >
-        application::get_settings().get<setting::max_cached_nodes>())
-      flush();
-  }
 }
 
 node_list_t dag_manager::get_group(std::size_t node_group_id) {

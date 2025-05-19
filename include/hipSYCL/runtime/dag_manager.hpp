@@ -45,7 +45,6 @@ public:
   void register_submitted_ops(dag_node_ptr);
 private:
   void flush();
-  void trigger_flush_opportunity();
 
   dag_builder* builder() const;
 

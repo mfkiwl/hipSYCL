@@ -1107,13 +1107,6 @@ private:
         _impl->previous_submission = node;
       } else if(cgh.contains_non_instant_nodes()) {
         _impl->has_non_instant_operations.store(true, std::memory_order_relaxed);
-        // If we have instant submission enabled, non-emulated in-order queue
-        // but non-instant tasks, we need to flush the dag, otherwise future instant
-        // tasks might not wait on the tasks that have been cached in the dag
-        // builder.
-#if ACPP_ALLOW_INSTANT_SUBMISSION
-        _impl->requires_runtime.get()->dag().flush_sync();
-#endif
       }
     }
 
