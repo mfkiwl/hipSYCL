@@ -40,7 +40,7 @@ dag_manager::~dag_manager()
 {
   HIPSYCL_DEBUG_INFO << "dag_manager: Waiting for async worker..." << std::endl;
   
-  flush_sync();
+  flush_and_gc();
   wait();
 
   HIPSYCL_DEBUG_INFO << "dag_manager: Shutdown." << std::endl;
@@ -61,7 +61,7 @@ void dag_manager::flush()
   // nodes from the DAG builder using finish_and_reset(), we directly submit them
   // to the worker thread.
   // Otherwise, the order in which submissions are processed in the worker thread
-  // can be incorrect. This can cause queue::submit();flush_sync() to fail in
+  // can be incorrect. This can cause queue::submit();flush_and_gc() to fail in
   // actually ensuring submission, or introduce dependencies in nodes during submission
   //  to other nodes that have not yet been submitted.
   std::lock_guard<std::mutex> lock{_flush_mutex};
@@ -131,11 +131,11 @@ void dag_manager::flush()
   }
 }
 
-void dag_manager::flush_sync()
+void dag_manager::flush_and_gc()
 {
   if(_builder->get_current_dag_size() > 0){
     this->flush();
-    // In a flush_sync, we can assume that we have finished a submission burst.
+    // In a flush_and_gc, we can assume that we have finished a submission burst.
     // So this may be a good time to clean up and perform garbage collection!
     this->_submitted_ops.async_wait_and_unregister();
 

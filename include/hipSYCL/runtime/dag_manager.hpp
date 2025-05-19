@@ -35,7 +35,7 @@ public:
 
   // Submits operations asynchronously and
   // wait until they have been submitted
-  void flush_sync();
+  void flush_and_gc();
   // Wait for completion of all submitted operations
   void wait();
   void wait(std::size_t node_group_id);
