@@ -55,6 +55,10 @@ if(WITH_ACCELERATED_CPU OR WITH_SSCP_COMPILER)
   set_property(TARGET acpp-clang-cbs PROPERTY POSITION_INDEPENDENT_CODE ON)
 endif()
 
+if(WITH_ACCELERATED_CPU)
+  set(WITH_REFLECTION_BUILTINS ON)
+endif()
+
 if(WITH_SSCP_COMPILER)
   set(WITH_REFLECTION_BUILTINS ON)
   set(SSCP_COMPILER
@@ -66,6 +70,7 @@ if(WITH_SSCP_COMPILER)
     sscp/AggregateArgumentExpansionPass.cpp
     sscp/StdBuiltinRemapperPass.cpp
     sscp/StdAtomicRemapperPass.cpp
+    sscp/DeviceAssertPass.cpp
     sscp/pcuda/FreeKernelCall.cpp
     sscp/pcuda/StaticLocalMemoryPass.cpp
     sscp/pcuda/ExternDynamicLocalMemoryPass.cpp)

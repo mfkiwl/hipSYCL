@@ -20,6 +20,7 @@
 #if ACPP_LIBKERNEL_IS_DEVICE_PASS_SSCP
 
 #include "builtins/atomic.hpp"
+#include "builtins/barrier.hpp"
 
 namespace hipsycl {
 namespace sycl {
@@ -464,7 +465,10 @@ HIPSYCL_BUILTIN double __acpp_atomic_fetch_max(double *addr, double x,
   return __acpp_sscp_atomic_fetch_max_f64(S, order, scope, addr, x);
 }
 
-
+HIPSYCL_BUILTIN void __acpp_atomic_fence(memory_order order,
+                                         memory_scope scope) noexcept {
+  __acpp_sscp_memory_fence(scope, order);
+}
 
 #undef return_cast
 

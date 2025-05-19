@@ -239,7 +239,7 @@ if(WITH_OPENCL_BACKEND)
   include(FetchContent)
   FetchContent_Declare(ocl-headers
     GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-Headers
-    GIT_TAG c860bb551eeef9a47d56286a70cea903db3d6ed2
+    GIT_TAG 265df85aec478d14a5c5880d7bb92d7dd52714ef
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""
   )
@@ -253,7 +253,7 @@ if(WITH_OPENCL_BACKEND)
   
   FetchContent_Declare(ocl-cxx-headers
     GIT_REPOSITORY https://github.com/KhronosGroup/OpenCL-CLHPP
-    GIT_TAG 0bdbbfe5ecda42cff50c96cc5e33527f42fcbd45
+    GIT_TAG 67d100e70612341707725b6648ccca4c10b0dc31
     CONFIGURE_COMMAND ""
     BUILD_COMMAND ""
   )
@@ -305,9 +305,10 @@ if(WITH_CPU_BACKEND)
     omp/omp_backend.cpp
     omp/omp_event.cpp
     omp/omp_hardware_manager.cpp
-    omp/omp_queue.cpp)
+    omp/omp_queue.cpp
+    omp/omp_phys_mem.cpp)
 
-  if(TARGET omp) # ACPP_LLVM_COMPONENT with openmp active
+  if(TARGET omp AND ACPP_LLVM_COMPONENT) # ACPP_LLVM_COMPONENT with openmp active
     set(OpenMP_CXX_INCLUDE_DIRS ${CMAKE_INSTALL_FULL_INCLUDEDIR})
     get_target_property(hipSYCL_OpenMP_CXX_LIBRARIES omp LINK_LIBRARIES)
     string(JOIN " " hipSYCL_OpenMP_CXX_LIBRARIES ${hipSYCL_OpenMP_CXX_LIBRARIES})

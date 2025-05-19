@@ -134,13 +134,15 @@ void dag_manager::flush()
 
 void dag_manager::flush_sync()
 {
-  this->flush();
-  // In a flush_sync, we can assume that we have finished a submission burst.
-  // So this may be a good time to clean up and perform garbage collection!
-  this->_submitted_ops.async_wait_and_unregister();
-  
-  HIPSYCL_DEBUG_INFO << "dag_manager: waiting for async worker..."
-                     << std::endl;
+  if(_builder->get_current_dag_size() > 0){
+    this->flush();
+    // In a flush_sync, we can assume that we have finished a submission burst.
+    // So this may be a good time to clean up and perform garbage collection!
+    this->_submitted_ops.async_wait_and_unregister();
+
+    HIPSYCL_DEBUG_INFO << "dag_manager: waiting for async worker..."
+                        << std::endl;
+  }
 }
 
 void dag_manager::wait()

@@ -7,6 +7,7 @@ if(WITH_LLVM_TO_PTX)
       TARGETNAME ptx 
       TRIPLE nvptx64-nvidia-cuda
       SOURCES 
+      assert.cpp
       atomic.cpp
       barrier.cpp
       core.cpp
