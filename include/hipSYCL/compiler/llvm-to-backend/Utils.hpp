@@ -345,6 +345,8 @@ private:
 };
 
 std::string getClangPath();
+std::string getLLCPath();
+std::string getLLDPath();
 
 }
 }

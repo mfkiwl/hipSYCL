@@ -231,7 +231,7 @@ bool LLVMToPtxTranslator::translateToBackendFormat(llvm::Module &FlavoredModule,
 
   llvm::SmallVector<char> InputFile;
   int InputFD;
-  // don't use fs::TempFile, as we can't unlock the file for the clang invocation later... (Windows)
+  // don't use fs::TempFile, as we can't unlock the file for the llc invocation later... (Windows)
   if(auto E = llvm::sys::fs::createTemporaryFile("acpp-sscp-ptx", "bc", InputFD, InputFile, llvm::sys::fs::OF_None)){
     this->registerError("LLVMToPtx: Could not create temp input file" + E.message());
     return false;
@@ -258,27 +258,21 @@ bool LLVMToPtxTranslator::translateToBackendFormat(llvm::Module &FlavoredModule,
     if(InputStream.error()) {HIPSYCL_DEBUG_ERROR << "Error while flushing" << InputStream.error().message() << '\n'; }
   }
 
-  const std::string ClangPath = getClangPath();
+  const std::string LLCPath = getLLCPath();
 
-  std::string PtxVersionArg = "+ptx" + std::to_string(PtxVersion);
-  std::string PtxTargetArg = "sm_" + std::to_string(PtxTarget);
-  llvm::SmallVector<llvm::StringRef, 16> Invocation{ClangPath,
-                                                    "-cc1",
-                                                    "-triple",
-                                                    "nvptx64-nvidia-cuda",
-                                                    "-target-feature",
+  std::string PtxVersionArg = "--mattr=+ptx" + std::to_string(PtxVersion);
+  std::string PtxTargetArg = "--mcpu=sm_" + std::to_string(PtxTarget);
+  llvm::SmallVector<llvm::StringRef, 16> Invocation{LLCPath,
+                                                    "--mtriple=nvptx64-nvidia-cuda",
                                                     PtxVersionArg,
-                                                    "-target-cpu",
                                                     PtxTargetArg,
                                                     "-O3",
-                                                    "-S",
-                                                    "-x",
-                                                    "ir",
                                                     "-o",
                                                     OutputFileName,
                                                     InputFileName};
-  if(IsFastMath)
-    Invocation.push_back("-ffast-math");
+  if(IsFastMath) {
+    Invocation.push_back("--enable-unsafe-fp-math");
+  }
 
   std::string ArgString;
   for(const auto& S : Invocation) {
@@ -287,10 +281,10 @@ bool LLVMToPtxTranslator::translateToBackendFormat(llvm::Module &FlavoredModule,
   }
   HIPSYCL_DEBUG_INFO << "LLVMToPtx: Invoking " << ArgString << "\n";
   
-  int R = llvm::sys::ExecuteAndWait(ClangPath, Invocation);
+  int R = llvm::sys::ExecuteAndWait(LLCPath, Invocation);
   
   if(R != 0) {
-    this->registerError("LLVMToPtx: clang invocation failed with exit code " +
+    this->registerError("LLVMToPtx: llc invocation failed with exit code " +
                         std::to_string(R));
     return false;
   }

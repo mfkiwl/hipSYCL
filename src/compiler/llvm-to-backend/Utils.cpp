@@ -14,6 +14,14 @@
 namespace hipsycl {
 namespace compiler {
 
+namespace {
+std::string getLLVMRedistributablePackagePath() {
+  const auto install_dir = common::filesystem::get_install_directory();
+  return common::filesystem::join_path(install_dir,
+                                       std::vector<std::string>{"lib", "hipSYCL", "ext", "llvm"});
+}
+}
+
 std::string getClangPath() {
   static std::string path;
   if(!path.empty())
@@ -27,6 +35,42 @@ std::string getClangPath() {
     path.replace(pos, std::string_view("$ACPP_PATH").size(), install_dir);
     pos = path.find("$ACPP_PATH");
   }
+  return path;
+}
+
+std::string getLLCPath() {
+  static std::string path;
+  if(!path.empty())
+    return path;
+  
+  std::string llvm_redistributable_path = getLLVMRedistributablePackagePath();
+  std::string llc_redistributable_path = common::filesystem::join_path(
+      llvm_redistributable_path, std::vector<std::string>{"bin", "llc"});
+
+  if(common::filesystem::exists(llc_redistributable_path)) {
+    path = llc_redistributable_path;
+  } else {
+    path = ACPP_LLC_PATH;
+  }
+
+  return path;
+}
+
+std::string getLLDPath() {
+  static std::string path;
+  if(!path.empty())
+    return path;
+  
+  std::string llvm_redistributable_path = getLLVMRedistributablePackagePath();
+  std::string lld_redistributable_path = common::filesystem::join_path(
+      llvm_redistributable_path, std::vector<std::string>{"bin", "lld"});
+
+  if(common::filesystem::exists(lld_redistributable_path)) {
+    path = lld_redistributable_path;
+  } else {
+    path = ACPP_LLD_PATH;
+  }
+
   return path;
 }
 
