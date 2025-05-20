@@ -74,5 +74,23 @@ std::string getLLDPath() {
   return path;
 }
 
+std::string getOptPath() {
+  static std::string path;
+  if(!path.empty())
+    return path;
+  
+  std::string llvm_redistributable_path = getLLVMRedistributablePackagePath();
+  std::string opt_redistributable_path = common::filesystem::join_path(
+      llvm_redistributable_path, std::vector<std::string>{"bin", "opt"});
+
+  if(common::filesystem::exists(opt_redistributable_path)) {
+    path = opt_redistributable_path;
+  } else {
+    path = ACPP_OPT_PATH;
+  }
+
+  return path;
+}
+
 } // namespace compiler
 } // namespace hipsycl

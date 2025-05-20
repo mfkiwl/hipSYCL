@@ -240,6 +240,14 @@ bool LLVMToPtxTranslator::translateToBackendFormat(llvm::Module &FlavoredModule,
 
   AtScopeExit RemoveInputFile([&](){auto Err = llvm::sys::fs::remove(InputFileName);});
 
+  llvm::SmallVector<char> OptOutputFile;
+  if(auto E = llvm::sys::fs::createTemporaryFile("acpp-sscp-ptx", "bc", OptOutputFile, llvm::sys::fs::OF_None)){
+    this->registerError("LLVMToPtx: Could not create temp file" + E.message());
+    return false;
+  }
+  llvm::StringRef OptOutputFileName = OptOutputFile.data();
+  AtScopeExit RemoveOptOutputFile([&](){auto Err = llvm::sys::fs::remove(OptOutputFileName);});
+
   llvm::SmallVector<char> OutputFile;
   if(auto E = llvm::sys::fs::createTemporaryFile("acpp-sscp-ptx", "s", OutputFile, llvm::sys::fs::OF_None)){
     this->registerError("LLVMToPtx: Could not create temp input file" + E.message());
@@ -258,20 +266,36 @@ bool LLVMToPtxTranslator::translateToBackendFormat(llvm::Module &FlavoredModule,
     if(InputStream.error()) {HIPSYCL_DEBUG_ERROR << "Error while flushing" << InputStream.error().message() << '\n'; }
   }
 
+  const std::string OptPath = getOptPath();
+  int OptR =
+      llvm::sys::ExecuteAndWait(OptPath, {OptPath, "-O3", InputFileName, "-o", OptOutputFileName});
+
+  if(OptR != 0) {
+    this->registerError("LLVMToPtx: opt invocation failed with exit code " +
+                        std::to_string(OptR));
+    return false;
+  }
+
   const std::string LLCPath = getLLCPath();
 
   std::string PtxVersionArg = "--mattr=+ptx" + std::to_string(PtxVersion);
   std::string PtxTargetArg = "--mcpu=sm_" + std::to_string(PtxTarget);
   llvm::SmallVector<llvm::StringRef, 16> Invocation{LLCPath,
                                                     "--mtriple=nvptx64-nvidia-cuda",
+                                                    "--march=nvptx64",
+                                                    "--frame-pointer=none",
                                                     PtxVersionArg,
                                                     PtxTargetArg,
                                                     "-O3",
                                                     "-o",
                                                     OutputFileName,
-                                                    InputFileName};
+                                                    OptOutputFileName};
   if(IsFastMath) {
     Invocation.push_back("--enable-unsafe-fp-math");
+    Invocation.push_back("--enable-no-infs-fp-math");
+    Invocation.push_back("--enable-no-nans-fp-math");
+    Invocation.push_back("--enable-no-signed-zeros-fp-math");
+    Invocation.push_back("--enable-no-trapping-fp-math");
   }
 
   std::string ArgString;
