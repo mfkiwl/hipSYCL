@@ -20,6 +20,17 @@ std::string getLLVMRedistributablePackagePath() {
   return common::filesystem::join_path(install_dir,
                                        std::vector<std::string>{"lib", "hipSYCL", "ext", "llvm"});
 }
+
+std::string replacePathPlaceholders(std::string path) {
+  auto pos = path.find("$ACPP_PATH");
+  while (pos != std::string::npos) {
+    const auto install_dir = common::filesystem::get_install_directory();
+    path.replace(pos, std::string_view("$ACPP_PATH").size(), install_dir);
+    pos = path.find("$ACPP_PATH");
+  }
+  return path;
+}
+
 }
 
 std::string getClangPath() {
@@ -27,14 +38,8 @@ std::string getClangPath() {
   if(!path.empty())
     return path;
   else
-    path = ACPP_CLANG_PATH;
+    path = replacePathPlaceholders(ACPP_CLANG_PATH);
   
-  auto pos = path.find("$ACPP_PATH");
-  while (pos != std::string::npos) {
-    const auto install_dir = common::filesystem::get_install_directory();
-    path.replace(pos, std::string_view("$ACPP_PATH").size(), install_dir);
-    pos = path.find("$ACPP_PATH");
-  }
   return path;
 }
 
@@ -50,7 +55,7 @@ std::string getLLCPath() {
   if(common::filesystem::exists(llc_redistributable_path)) {
     path = llc_redistributable_path;
   } else {
-    path = ACPP_LLC_PATH;
+    path = replacePathPlaceholders(ACPP_LLC_PATH);
   }
 
   return path;
@@ -68,7 +73,7 @@ std::string getLLDPath() {
   if(common::filesystem::exists(lld_redistributable_path)) {
     path = lld_redistributable_path;
   } else {
-    path = ACPP_LLD_PATH;
+    path = replacePathPlaceholders(ACPP_LLD_PATH);
   }
 
   return path;
@@ -86,7 +91,7 @@ std::string getOptPath() {
   if(common::filesystem::exists(opt_redistributable_path)) {
     path = opt_redistributable_path;
   } else {
-    path = ACPP_OPT_PATH;
+    path = replacePathPlaceholders(ACPP_OPT_PATH);
   }
 
   return path;
