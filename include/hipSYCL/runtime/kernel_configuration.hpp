@@ -52,8 +52,6 @@ enum class kernel_build_option : int {
   ptx_target_device,
 
   amdgpu_target_device,
-  amdgpu_rocm_device_libs_path,
-  amdgpu_rocm_path,
 
   spirv_dynamic_local_mem_allocation_size
 };

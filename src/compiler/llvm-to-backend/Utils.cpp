@@ -15,10 +15,16 @@ namespace hipsycl {
 namespace compiler {
 
 namespace {
-std::string getLLVMRedistributablePackagePath() {
+
+std::string getRedistributablePackagePath() {
   const auto install_dir = common::filesystem::get_install_directory();
   return common::filesystem::join_path(install_dir,
-                                       std::vector<std::string>{"lib", "hipSYCL", "ext", "llvm"});
+                                       std::vector<std::string>{"lib", "hipSYCL", "ext"});
+}
+
+std::string getLLVMRedistributablePackagePath() {
+  std::string RedistPkg = getRedistributablePackagePath();
+  return common::filesystem::join_path(RedistPkg, "llvm");
 }
 
 std::string replacePathPlaceholders(std::string path) {
@@ -95,6 +101,11 @@ std::string getOptPath() {
   }
 
   return path;
+}
+
+std::string getRedistPackageBitcodePath(const std::string& backend) {
+  return common::filesystem::join_path(getRedistributablePackagePath(),
+                                       std::vector<std::string>{"bitcode", backend});
 }
 
 } // namespace compiler
