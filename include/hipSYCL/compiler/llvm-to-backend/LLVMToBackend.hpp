@@ -216,6 +216,9 @@ protected:
   bool GlobalSizesFitInInt = false;
   bool IsFastMath = false;
 
+  // If runtime/user wants a specific subgroup size, this value will be > 0.
+  int DesiredSubgroupSize = -1;
+
 private:
 
   void resolveExternalSymbols(llvm::Module& M);

@@ -47,6 +47,7 @@ enum class kernel_build_option : int {
   known_group_size_y,
   known_group_size_z,
   known_local_mem_size,
+  desired_subgroup_size,
 
   ptx_version,
   ptx_target_device,

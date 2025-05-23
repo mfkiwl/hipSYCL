@@ -330,8 +330,14 @@ bool LLVMToAmdgpuTranslator::toBackendFlavor(llvm::Module &M, PassHandler& PH) {
   return true;
 }
 
+bool LLVMToAmdgpuTranslator::translateToBackendFormat(llvm::Module &FlavoredModule,
+                                                      std::string &Out) {
+  if(getWavefrontSize() != 32 && getWavefrontSize() != 64) {
+    this->registerError("LLVMToAmdgpu: Invalid wavefront size was requested: " +
+                        std::to_string(getWavefrontSize()));
+    return false;
+  }
 
-bool LLVMToAmdgpuTranslator::translateToBackendFormat(llvm::Module &FlavoredModule, std::string &Out) {
 #ifdef ACPP_HIPRTC_LINK
   HIPSYCL_DEBUG_INFO << "LLVMToAmdgpu: Invoking hipRTC...\n";
 
@@ -394,7 +400,7 @@ bool LLVMToAmdgpuTranslator::hiprtcJitLink(const std::string &Bitcode, std::stri
   };
 
   std::vector<std::string> DeviceLibs;
-  RocmDeviceLibs::determineRequiredDeviceLibs(TargetDevice, DeviceLibs, IsFastMath, WavefrontSize,
+  RocmDeviceLibs::determineRequiredDeviceLibs(TargetDevice, DeviceLibs, IsFastMath, getWavefrontSize(),
                                               CodeObjectModelVersion);
   for(const auto& Lib : DeviceLibs) {
     HIPSYCL_DEBUG_INFO << "LLVMToAmdgpu: Linking with bitcode file: " << Lib << "\n";
@@ -448,8 +454,8 @@ bool LLVMToAmdgpuTranslator::clangJitLink(llvm::Module& FlavoredModule, std::str
   };
 
   std::vector<std::string> DeviceLibs;
-  RocmDeviceLibs::determineRequiredDeviceLibs(TargetDevice, DeviceLibs, IsFastMath, WavefrontSize,
-                                              CodeObjectModelVersion);
+  RocmDeviceLibs::determineRequiredDeviceLibs(TargetDevice, DeviceLibs, IsFastMath,
+                                              getWavefrontSize(), CodeObjectModelVersion);
   for(const auto& BC : DeviceLibs)
     addBitcodeFile(BC);
 
@@ -581,6 +587,13 @@ void LLVMToAmdgpuTranslator::removeKernelProperties(llvm::Function* F) {
   }
   if(F->hasFnAttribute("amdgpu-flat-work-group-size"))
     F->removeFnAttr("amdgpu-flat-work-group-size");
+}
+
+int LLVMToAmdgpuTranslator::getWavefrontSize() const {
+  if(DesiredSubgroupSize > 0) {
+    return DesiredSubgroupSize;
+  }
+  return 64;
 }
 
 std::unique_ptr<LLVMToBackendTranslator>

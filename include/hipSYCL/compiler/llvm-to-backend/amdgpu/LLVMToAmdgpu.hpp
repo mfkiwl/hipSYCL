@@ -39,8 +39,8 @@ private:
   std::vector<std::string> KernelNames;
   std::string TargetDevice = "gfx900";
   int CodeObjectModelVersion = -1;
-  int WavefrontSize = 64;
-
+  
+  int getWavefrontSize() const;
   bool hiprtcJitLink(const std::string& Bitcode, std::string& Output);
   bool clangJitLink(llvm::Module& FlavoredModule, std::string& Output);
 

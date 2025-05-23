@@ -241,6 +241,8 @@ bool LLVMToBackendTranslator::setBuildOption(const std::string &Option, const st
     return true;
   } else if (Option == "known-local-mem-size") {
     KnownLocalMemSize = std::stoi(Value);
+  } else if (Option == "desired-subgroup-size") {
+    DesiredSubgroupSize = std::stoi(Value);
   }
 
   return applyBuildOption(Option, Value);
