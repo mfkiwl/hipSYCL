@@ -225,7 +225,8 @@ if(WITH_SSCP_COMPILER)
       TOOL amdgpu/LLVMToAmdgpuTool.cpp)
 
     target_compile_definitions(llvm-to-amdgpu PRIVATE
-      -DACPP_ROCM_PATH="${ROCM_PATH}")
+      -DACPP_ROCM_PATH="${ROCM_PATH}"
+      -DACPP_ROCM_DEVICE_LIBS_PATH="${ROCM_DEVICE_LIBS_PATH}")
     
     find_program(HIPCC_PATH hipcc HINTS ${ROCM_PATH}/bin)
     if(HIPCC_PATH)

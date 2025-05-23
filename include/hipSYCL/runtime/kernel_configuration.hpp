@@ -47,13 +47,12 @@ enum class kernel_build_option : int {
   known_group_size_y,
   known_group_size_z,
   known_local_mem_size,
+  desired_subgroup_size,
 
   ptx_version,
   ptx_target_device,
 
   amdgpu_target_device,
-  amdgpu_rocm_device_libs_path,
-  amdgpu_rocm_path,
 
   spirv_dynamic_local_mem_allocation_size
 };
