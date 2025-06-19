@@ -589,6 +589,95 @@ sycl::event count_if(sycl::queue &q, util::allocation_group &scratch_allocations
                           deps);
 }
 
+template <class ForwardIt1, class ForwardIt2>
+sycl::event equal(sycl::queue &q,
+                   ForwardIt1 first1, ForwardIt1 last1, ForwardIt2 first2,
+                    detail::early_exit_flag_t* out, const std::vector<sycl::event>& deps= {}) {
+  std::size_t problem_size = std::distance(first1, last1);
+  if(problem_size == 0)
+    return sycl::event{};
+  auto evt = detail ::early_exit_for_each(q, problem_size, out,
+                                          [=](sycl::id<1> idx) -> bool {
+                                            auto it1 = first1;
+                                            auto it2 = first2;
+                                            std::advance(it1, idx[0]);
+                                            std::advance(it2, idx[0]);
+                                            return !(*it1 == *it2);
+                                          }, deps);
+  return q.single_task(evt, [=](){
+    *out = static_cast<detail::early_exit_flag_t>(!(*out));
+  });
+}
+
+template <class ForwardIt1, class ForwardIt2, class BinaryPred>
+sycl::event equal(sycl::queue &q,
+                   ForwardIt1 first1, ForwardIt1 last1, ForwardIt2 first2,
+                   BinaryPred p, detail::early_exit_flag_t* out,
+                   const std::vector<sycl::event>& deps = {}) {
+  std::size_t problem_size = std::distance(first1, last1);
+  if(problem_size == 0)
+    return sycl::event{};
+  auto evt = detail ::early_exit_for_each(q, problem_size, out,
+                                          [=](sycl::id<1> idx) -> bool {
+                                            auto it1 = first1;
+                                            auto it2 = first2;
+                                            std::advance(it1, idx[0]);
+                                            std::advance(it2, idx[0]);
+                                            return !p(*it1, *it2);
+                                          }, deps);
+  return q.single_task(evt, [=](){
+    *out = static_cast<detail::early_exit_flag_t>(!(*out));
+  });
+}
+
+template <class ForwardIt1, class ForwardIt2>
+sycl::event equal(sycl::queue &q,
+                   ForwardIt1 first1, ForwardIt1 last1, ForwardIt2 first2,
+                   ForwardIt2 last2, detail::early_exit_flag_t* out,
+                   const std::vector<sycl::event>& deps= {}) {
+  std::size_t size1 = std::distance(first1, last1);
+  std::size_t size2 = std::distance(first2, last2);
+  if (size1 != size2 || size1 == 0)
+    return sycl::event{};
+
+  auto evt = detail ::early_exit_for_each(q, size1, out,
+                                          [=](sycl::id<1> idx) -> bool {
+                                            auto it1 = first1;
+                                            auto it2 = first2;
+                                            std::advance(it1, idx[0]);
+                                            std::advance(it2, idx[0]);
+                                            return !(*it1 == *it2);
+                                          }, deps);
+
+  return q.single_task(evt, [=](){
+    *out = static_cast<detail::early_exit_flag_t>(!(*out));
+  });
+}
+
+template <class ForwardIt1, class ForwardIt2, class BinaryPred>
+sycl::event equal(sycl::queue &q,
+                   ForwardIt1 first1, ForwardIt1 last1, ForwardIt2 first2,
+                   ForwardIt2 last2, BinaryPred p, detail::early_exit_flag_t* out,
+                   const std::vector<sycl::event>& deps = {}) {
+  std::size_t size1 = std::distance(first1, last1);
+  std::size_t size2 = std::distance(first2, last2);
+  if(size1 != size2 || size1 == 0)
+    return sycl::event{};
+
+  auto evt = detail ::early_exit_for_each(q, size1, out,
+                                          [=](sycl::id<1> idx) -> bool {
+                                            auto it1 = first1;
+                                            auto it2 = first2;
+                                            std::advance(it1, idx[0]);
+                                            std::advance(it2, idx[0]);
+                                            return !p(*it1, *it2);
+                                          }, deps);
+
+  return q.single_task(evt, [=](){
+    *out = static_cast<detail::early_exit_flag_t>(!(*out));
+  });
+}
+
 template <class RandomIt, class Compare>
 sycl::event sort(sycl::queue &q, RandomIt first, RandomIt last,
                  Compare comp = std::less<>{},
