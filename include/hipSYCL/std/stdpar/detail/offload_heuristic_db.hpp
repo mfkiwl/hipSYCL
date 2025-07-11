@@ -63,6 +63,8 @@ struct count{};
 struct count_if{};
 struct equal {};
 struct sort {};
+struct is_sorted {};
+struct is_sorted_until {};
 struct merge {};
 struct inclusive_scan {};
 struct exclusive_scan {};
