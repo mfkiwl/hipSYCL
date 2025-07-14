@@ -191,6 +191,26 @@ typename std::iterator_traits<ForwardIt>::difference_type
 count_if( hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last,
          UnaryPredicate p );
 
+template <class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt min_element(hipsycl::stdpar::par_unseq, ForwardIt first,
+                      ForwardIt last);
+
+template <class ForwardIt, class Compare>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt min_element(hipsycl::stdpar::par_unseq, ForwardIt first,
+                      ForwardIt last, Compare comp);
+
+template <class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt max_element(hipsycl::stdpar::par_unseq, ForwardIt first,
+                      ForwardIt last);
+
+template <class ForwardIt, class Compare>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt max_element(hipsycl::stdpar::par_unseq, ForwardIt first,
+                      ForwardIt last, Compare comp);
+
 template<class ForwardIt>
 HIPSYCL_STDPAR_ENTRYPOINT
 bool is_sorted(hipsycl::stdpar::par_unseq, ForwardIt first, ForwardIt last);
@@ -256,6 +276,24 @@ HIPSYCL_STDPAR_ENTRYPOINT
 typename std::iterator_traits<ForwardIt>::difference_type
 count_if( hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
          UnaryPredicate p );
+
+template <class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt min_element(hipsycl::stdpar::par, ForwardIt first, ForwardIt last);
+
+template <class ForwardIt, class Compare>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt min_element(hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
+                      Compare comp);
+
+template <class ForwardIt>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt max_element(hipsycl::stdpar::par, ForwardIt first, ForwardIt last);
+
+template <class ForwardIt, class Compare>
+HIPSYCL_STDPAR_ENTRYPOINT
+ForwardIt max_element(hipsycl::stdpar::par, ForwardIt first, ForwardIt last,
+                      Compare comp);
 
 template<class ForwardIt>
 HIPSYCL_STDPAR_ENTRYPOINT
