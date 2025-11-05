@@ -29,7 +29,7 @@ result ocl_sscp_code_object_invoker::submit_kernel(
   assert(_queue);
 
   return _queue->submit_sscp_kernel_from_code_object(
-      op, hcf_object, kernel_name, kernel_info, num_groups, group_size,
+      hcf_object, kernel_name, kernel_info, num_groups, group_size,
       local_mem_size, args, arg_sizes, num_args, config);
 }
 
@@ -54,7 +54,7 @@ ocl_executable_object::ocl_executable_object(const cl::Context& ctx, cl::Device&
   std::string options_string="-cl-uniform-work-group-size";
   for(const auto& flag : config.build_flags()) {
     if(flag == kernel_build_flag::fast_math) {
-      options_string += " -cl-fast-relaxed-math";
+      options_string += " -cl-fast-relaxed-math -cl-denorms-are-zero";
     }
   }
 

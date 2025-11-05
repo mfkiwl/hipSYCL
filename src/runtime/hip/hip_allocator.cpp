@@ -12,6 +12,7 @@
 #include "hipSYCL/runtime/hip/hip_allocator.hpp"
 #include "hipSYCL/runtime/hip/hip_device_manager.hpp"
 #include "hipSYCL/runtime/error.hpp"
+#include "hipSYCL/runtime/hints.hpp"
 
 namespace hipsycl {
 namespace rt {
@@ -20,7 +21,8 @@ hip_allocator::hip_allocator(backend_descriptor desc, int hip_device)
     : _backend_descriptor{desc}, _dev{hip_device}
 {}
       
-void *hip_allocator::allocate(size_t min_alignment, size_t size_bytes)
+void *hip_allocator::raw_allocate(size_t min_alignment, size_t size_bytes,
+                                  const allocation_hints &hints)
 {
   void *ptr;
   hip_device_manager::get().activate_device(_dev);
@@ -37,8 +39,9 @@ void *hip_allocator::allocate(size_t min_alignment, size_t size_bytes)
   return ptr;
 }
 
-void *hip_allocator::allocate_optimized_host(size_t min_alignment,
-                                             size_t bytes) {
+void *hip_allocator::raw_allocate_optimized_host(size_t min_alignment,
+                                                 size_t bytes,
+                                                 const allocation_hints &hints) {
   void *ptr;
   hip_device_manager::get().activate_device(_dev);
 
@@ -54,7 +57,7 @@ void *hip_allocator::allocate_optimized_host(size_t min_alignment,
   return ptr;
 }
 
-void hip_allocator::free(void *mem) {
+void hip_allocator::raw_free(void *mem) {
 
   pointer_info info;
   result query_result = query_pointer(mem, info);
@@ -78,7 +81,8 @@ void hip_allocator::free(void *mem) {
   }
 }
 
-void * hip_allocator::allocate_usm(size_t bytes)
+void * hip_allocator::raw_allocate_usm(size_t bytes,
+                                       const allocation_hints &hints)
 {
   hip_device_manager::get().activate_device(_dev);
 
@@ -171,6 +175,10 @@ result hip_allocator::mem_advise(const void *addr, std::size_t num_bytes,
                         << std::endl;
 #endif
   return make_success();
+}
+
+device_id hip_allocator::get_device() const {
+  return device_id{_backend_descriptor, _dev};
 }
 
 }

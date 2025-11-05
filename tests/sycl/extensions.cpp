@@ -24,12 +24,15 @@
 
 #include "sycl_test_suite.hpp"
 #include <boost/test/tools/old/interface.hpp>
+#ifdef LIB_NUMA_AVAILABLE
+#include <numa.h>
+#endif
 
 BOOST_FIXTURE_TEST_SUITE(extension_tests, reset_device_fixture)
 
 #ifdef ACPP_EXT_AUTO_PLACEHOLDER_REQUIRE
 BOOST_AUTO_TEST_CASE(auto_placeholder_require_extension) {
-  namespace s = cl::sycl;
+  namespace s = sycl;
 
   s::queue q;
   s::buffer<int, 1> buff{1};
@@ -89,41 +92,39 @@ BOOST_AUTO_TEST_CASE(auto_placeholder_require_extension) {
 #if defined(ACPP_EXT_CUSTOM_PFWI_SYNCHRONIZATION) &&                           \
     !defined(__ACPP_ENABLE_LLVM_SSCP_TARGET__)
 BOOST_AUTO_TEST_CASE(custom_pfwi_synchronization_extension) {
-  namespace sync = cl::sycl::vendor::hipsycl::synchronization;
+  namespace sync = sycl::vendor::hipsycl::synchronization;
 
   constexpr size_t local_size = 256;
   constexpr size_t global_size = 1024;
 
-  cl::sycl::queue queue;
+  sycl::queue queue;
   std::vector<int> host_buf;
   for(size_t i = 0; i < global_size; ++i) {
     host_buf.push_back(static_cast<int>(i));
   }
 
   {
-    cl::sycl::buffer<int, 1> buf{host_buf.data(), host_buf.size()};
+    sycl::buffer<int, 1> buf{host_buf.data(), host_buf.size()};
 
-    queue.submit([&](cl::sycl::handler& cgh) {
+    queue.submit([&](sycl::handler& cgh) {
 
-      auto acc = buf.get_access<cl::sycl::access::mode::read_write>(cgh);
+      auto acc = buf.get_access<sycl::access::mode::read_write>(cgh);
       auto scratch =
-          cl::sycl::accessor<int, 1, cl::sycl::access::mode::read_write,
-                             cl::sycl::access::target::local>{local_size,
-                                                                    cgh};
+          sycl::local_accessor<int, 1>{local_size, cgh};
 
       cgh.parallel_for_work_group<class pfwi_dispatch>(
-        cl::sycl::range<1>{global_size / local_size},
-        cl::sycl::range<1>{local_size},
-        [=](cl::sycl::group<1> wg) {
+        sycl::range<1>{global_size / local_size},
+        sycl::range<1>{local_size},
+        [=](sycl::group<1> wg) {
 
           wg.parallel_for_work_item<sync::local_barrier>(
-            [&](cl::sycl::h_item<1> item) {
+            [&](sycl::h_item<1> item) {
             scratch[item.get_local_id()[0]] = acc[item.get_global_id()];
           });
 
           // By default, a barrier is used
           wg.parallel_for_work_item(
-            [&](cl::sycl::h_item<1> item) {
+            [&](sycl::h_item<1> item) {
             scratch[item.get_local_id()[0]] *= 2;
           });
 
@@ -131,20 +132,20 @@ BOOST_AUTO_TEST_CASE(custom_pfwi_synchronization_extension) {
           // that there is no synchronization is difficult,
           // so let's just test that things compile for now.
           wg.parallel_for_work_item<sync::none>(
-            [&](cl::sycl::h_item<1> item) {
+            [&](sycl::h_item<1> item) {
             acc[item.get_global_id()] = scratch[item.get_local_id()[0]];
           });
 
           wg.parallel_for_work_item<sync::local_mem_fence>(
-            [&](cl::sycl::h_item<1> item) {
+            [&](sycl::h_item<1> item) {
           });
 
           wg.parallel_for_work_item<sync::global_mem_fence>(
-            [&](cl::sycl::h_item<1> item) {
+            [&](sycl::h_item<1> item) {
           });
 
           wg.parallel_for_work_item<sync::global_and_local_mem_fence>(
-            [&](cl::sycl::h_item<1> item) {
+            [&](sycl::h_item<1> item) {
           });
         });
     });
@@ -166,7 +167,7 @@ class enumerated_kernel_name;
 
 template<class KernelName, int Dim>
 void test_distribute_groups(){
-  namespace s = cl::sycl;
+  namespace s = sycl;
   s::queue q;
 
   s::range<Dim> input_size;
@@ -240,14 +241,14 @@ template<class Name, int D>
 class nd_kernel_name;
 
 BOOST_AUTO_TEST_CASE_TEMPLATE(scoped_parallelism_api, _dimensions,
-                              test_dimensions::type) {
+                              test_dimensions) {
   constexpr int d = _dimensions::value;
   test_distribute_groups<nd_kernel_name<class ScopedParallelismDistrGroups, d>,
                          d>();
 }
 
 BOOST_AUTO_TEST_CASE(scoped_parallelism_reduction) {
-  namespace s = cl::sycl;
+  namespace s = sycl;
   s::queue q;
   
   std::size_t input_size = 256;
@@ -306,7 +307,7 @@ BOOST_AUTO_TEST_CASE(scoped_parallelism_reduction) {
 } 
 
 BOOST_AUTO_TEST_CASE(scoped_parallelism_memory_environment) {
-  namespace s = cl::sycl;
+  namespace s = sycl;
 
   s::queue q;
   std::size_t input_size = 1024;
@@ -390,7 +391,6 @@ BOOST_AUTO_TEST_CASE(scoped_parallelism_memory_environment) {
 
 }
 BOOST_AUTO_TEST_CASE(scoped_parallelism_odd_group_size) {
-  using namespace cl;
   sycl::queue q;
   const size_t test_size = 1000;
   sycl::buffer<int> buff{sycl::range{test_size}};
@@ -418,10 +418,8 @@ BOOST_AUTO_TEST_CASE(scoped_parallelism_odd_group_size) {
 #endif
 #ifdef ACPP_EXT_ENQUEUE_CUSTOM_OPERATION
 
-template<cl::sycl::backend B>
-void test_interop(cl::sycl::queue& q) {
-  using namespace cl;
-
+template<sycl::backend B>
+void test_interop(sycl::queue& q) {
   const std::size_t test_size = 1024;
 
   std::vector<int> initial_data(test_size, 14);
@@ -481,7 +479,6 @@ void test_interop(cl::sycl::queue& q) {
 }
 
 BOOST_AUTO_TEST_CASE(custom_enqueue) {
-  using namespace cl;
 
   sycl::queue q;
   sycl::backend b = q.get_device().get_backend();
@@ -498,7 +495,6 @@ BOOST_AUTO_TEST_CASE(custom_enqueue) {
 #endif
 #ifdef ACPP_EXT_CG_PROPERTY_RETARGET
 BOOST_AUTO_TEST_CASE(cg_property_retarget) {
-  using namespace cl;
 
   auto all_devices = sycl::device::get_devices();
 
@@ -554,7 +550,6 @@ int get_total_group_size() {
 
 #ifdef ACPP_EXT_CG_PROPERTY_PREFER_GROUP_SIZE
 BOOST_AUTO_TEST_CASE(cg_property_preferred_group_size) {
-  using namespace cl;
 
   sycl::queue q{sycl::property_list{sycl::property::queue::in_order{}}};
 
@@ -616,7 +611,7 @@ BOOST_AUTO_TEST_CASE(cg_property_preferred_group_size) {
            [&](sycl::handler &cgh) {
              cgh.parallel_for<class property_preferred_group_size3>(
                  sycl::range{10,10,10}, [=](sycl::id<3> idx) {
-                   if (idx[0] == 0 && idx[1] == 0) {
+                   if (idx[0] == 0 && idx[1] == 0 && idx[2] == 0) {
 #if defined(DEVICE_MODEL)
                     __acpp_if_target_device(
                      gsize[2] = get_total_group_size();
@@ -657,13 +652,13 @@ BOOST_AUTO_TEST_CASE(cg_property_preferred_group_size) {
 
 BOOST_AUTO_TEST_CASE(cg_property_prefer_execution_lane) {
 
-  cl::sycl::queue q;
+  sycl::queue q;
 
   // Only compile testing for now
   for(std::size_t i = 0; i < 100; ++i) {
     q.submit(
-        {cl::sycl::property::command_group::AdaptiveCpp_prefer_execution_lane{i}},
-        [&](cl::sycl::handler &cgh) {
+        {sycl::property::command_group::AdaptiveCpp_prefer_execution_lane{i}},
+        [&](sycl::handler &cgh) {
           cgh.single_task<class prefer_execution_lane_test>([=]() {});
         });
   }
@@ -674,7 +669,6 @@ BOOST_AUTO_TEST_CASE(cg_property_prefer_execution_lane) {
 
 #ifdef ACPP_EXT_PREFETCH_HOST
 BOOST_AUTO_TEST_CASE(prefetch_host) {
-  using namespace cl;
 
   sycl::queue q{sycl::property_list{sycl::property::queue::in_order{}}};
 
@@ -698,7 +692,6 @@ BOOST_AUTO_TEST_CASE(prefetch_host) {
 #endif
 #ifdef ACPP_EXT_BUFFER_USM_INTEROP
 BOOST_AUTO_TEST_CASE(buffer_introspection) {
-  using namespace cl;
 
   sycl::queue q{sycl::property_list{sycl::property::queue::in_order{}}};
   sycl::range size{1024};
@@ -775,7 +768,6 @@ BOOST_AUTO_TEST_CASE(buffer_introspection) {
 }
 
 BOOST_AUTO_TEST_CASE(buffers_over_usm_pointers) {
-  using namespace cl;
 
   sycl::queue q;
   sycl::range size{1024};
@@ -838,7 +830,6 @@ BOOST_AUTO_TEST_CASE(buffers_over_usm_pointers) {
 #ifdef ACPP_EXT_BUFFER_PAGE_SIZE
 
 BOOST_AUTO_TEST_CASE(buffer_page_size) {
-  using namespace cl;
 
   sycl::queue q;
 
@@ -892,7 +883,6 @@ BOOST_AUTO_TEST_CASE(buffer_page_size) {
 #endif
 #ifdef ACPP_EXT_EXPLICIT_BUFFER_POLICIES
 BOOST_AUTO_TEST_CASE(explicit_buffer_policies) {
-  using namespace cl;
   sycl::queue q;
   sycl::range size{1024};
 
@@ -978,15 +968,14 @@ BOOST_AUTO_TEST_CASE(explicit_buffer_policies) {
 #ifdef ACPP_EXT_ACCESSOR_VARIANTS
 #ifdef ACPP_EXT_ACCESSOR_VARIANT_DEDUCTION
 
-template <class T, int Dim, cl::sycl::access_mode M, cl::sycl::target Tgt,
-          cl::sycl::accessor_variant V>
-constexpr cl::sycl::accessor_variant
-get_accessor_variant(cl::sycl::accessor<T, Dim, M, Tgt, V>) {
+template <class T, int Dim, sycl::access_mode M, sycl::target Tgt,
+          sycl::accessor_variant V>
+constexpr sycl::accessor_variant
+get_accessor_variant(sycl::accessor<T, Dim, M, Tgt, V>) {
   return V;
 }
 
 BOOST_AUTO_TEST_CASE(accessor_variants) {
-  using namespace cl;
   sycl::queue q;
   sycl::range size{1024};
   sycl::range subrange{512};
@@ -1054,7 +1043,6 @@ BOOST_AUTO_TEST_CASE(accessor_variants) {
 #if defined(ACPP_EXT_UPDATE_DEVICE) &&                                      \
     defined(ACPP_EXT_BUFFER_USM_INTEROP)
 BOOST_AUTO_TEST_CASE(update_device) {
-  using namespace cl;
   sycl::queue q;
   sycl::range size{1024};
   sycl::buffer<int> buff{size};
@@ -1089,7 +1077,6 @@ BOOST_AUTO_TEST_CASE(update_device) {
 #ifdef ACPP_EXT_QUEUE_WAIT_LIST
 
 BOOST_AUTO_TEST_CASE(queue_wait_list) {
-  using namespace cl;
   sycl::queue out_of_order_q;
   sycl::queue in_order_q{
       sycl::property_list{sycl::property::queue::in_order{},
@@ -1117,7 +1104,6 @@ BOOST_AUTO_TEST_CASE(queue_wait_list) {
 #if defined(ACPP_EXT_MULTI_DEVICE_QUEUE) && defined(ACPP_TEST_MULTI_DEVICE_QUEUE)
 
 BOOST_AUTO_TEST_CASE(multi_device_queue) {
-  using namespace cl;
   sycl::queue q{sycl::system_selector_v};
 
   sycl::buffer<int> buff{sycl::range{1}};
@@ -1147,7 +1133,6 @@ BOOST_AUTO_TEST_CASE(multi_device_queue) {
 #endif
 #ifdef ACPP_EXT_COARSE_GRAINED_EVENTS
 BOOST_AUTO_TEST_CASE(coarse_grained_events) {
-  using namespace cl;
   sycl::queue q{sycl::property::queue::AdaptiveCpp_coarse_grained_events{}};
   
   auto e1 = q.single_task([=](){});
@@ -1173,7 +1158,6 @@ BOOST_AUTO_TEST_CASE(coarse_grained_events) {
 
 #ifdef ACPP_EXT_SPECIALIZED
 BOOST_AUTO_TEST_CASE(sycl_specialized) {
-  using namespace cl;
   sycl::queue q;
 
   uint64_t* data = sycl::malloc_shared<uint64_t>(1, q);
@@ -1220,6 +1204,155 @@ BOOST_AUTO_TEST_CASE(sycl_specialized) {
   }
 
   sycl::free(data, q);
+}
+#endif
+#ifdef ACPP_EXT_TARGET_NUMA_NODE_PROPERTY
+BOOST_AUTO_TEST_CASE(target_numa_node_property) {
+  sycl::queue q{
+    sycl::property_list{
+      sycl::property::queue::in_order{}}
+    };
+
+  std::size_t n = 1024;
+
+#ifdef LIB_NUMA_AVAILABLE
+
+  // Using the property without specifying any NUMA node
+  int *ptr_numa_no_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{}}});
+
+  // alloc on the first NUMA node. Every cpu should have at least one
+  // NUMA node
+  int *ptr_numa_first_available_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{0}}});
+
+  // allocate on the last available NUMA node
+  int *ptr_numa_max_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{ sycl::property::usm::AdaptiveCpp_target_numa_node{
+          {static_cast<size_t>(numa_max_node())}}});
+
+  // allocate on a non available NUMA node
+  int *ptr_numa_non_available_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{ sycl::property::usm::AdaptiveCpp_target_numa_node{
+          {static_cast<size_t>(numa_max_node())+1}}});
+
+  //store all available NUMA nodes in a vector
+  struct bitmask *available_bm = numa_get_mems_allowed();
+  std::vector<size_t> available_nodes_vec;
+  for(size_t node_id = 0; node_id <= numa_max_node(); node_id++){
+    if(numa_bitmask_isbitset(available_bm, node_id) != 0){
+      available_nodes_vec.push_back(node_id);
+    }
+  }
+
+  //allocatre on all available NUMA nodes
+  int *ptr_numa_all_available_nodes = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{ sycl::property::usm::AdaptiveCpp_target_numa_node{
+      available_nodes_vec}});
+
+  numa_free_nodemask(available_bm);
+
+  q.wait();
+
+  // - AdaptiveCpp_target_numa_node is only availble on the OpenMP backend.
+  // Using the property with any other backend should have no effect.
+  // - Verify with numa_available() that the system support
+  // NUMA policy
+  // - Even when the system support NUMA policy, NUMA node may not
+  // be available. If numa_get_mems_allowed returns an empty bitmask, this
+  // means that no NUMA node is available. In this case we expect all allocations
+  // to fail
+  sycl::backend b = q.get_device().get_backend();
+  if(b == sycl::backend::omp && numa_available() != -1){
+    if(!available_nodes_vec.empty()){
+      BOOST_TEST(ptr_numa_no_node == nullptr);
+      BOOST_TEST(ptr_numa_first_available_node != nullptr);
+      BOOST_TEST(ptr_numa_max_node != nullptr);
+      BOOST_TEST(ptr_numa_non_available_node == nullptr);
+      BOOST_TEST(ptr_numa_all_available_nodes != nullptr);
+    }
+    else{
+      BOOST_TEST(ptr_numa_no_node == nullptr);
+      BOOST_TEST(ptr_numa_first_available_node == nullptr);
+      BOOST_TEST(ptr_numa_max_node == nullptr);
+      BOOST_TEST(ptr_numa_non_available_node == nullptr);
+      BOOST_TEST(ptr_numa_all_available_nodes == nullptr);
+    }
+  }
+  else{
+    BOOST_TEST(ptr_numa_no_node != nullptr);
+    BOOST_TEST(ptr_numa_first_available_node != nullptr);
+    BOOST_TEST(ptr_numa_max_node != nullptr);
+    BOOST_TEST(ptr_numa_non_available_node != nullptr);
+    BOOST_TEST(ptr_numa_all_available_nodes != nullptr);
+  }
+
+  sycl::free(ptr_numa_no_node, q);
+  sycl::free(ptr_numa_first_available_node, q);
+  sycl::free(ptr_numa_max_node, q);
+  sycl::free(ptr_numa_non_available_node, q);
+  sycl::free(ptr_numa_all_available_nodes, q);
+
+#else
+  int *ptr_no_node = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{}}});
+  int *ptr_numa_1 = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{1}}});
+  int *ptr_numa_99 = sycl::malloc_device<int>(
+      n, q,
+      sycl::property_list{
+          sycl::property::usm::AdaptiveCpp_target_numa_node{{99}}});
+
+  q.wait();
+
+  BOOST_TEST(ptr_no_node != nullptr);
+  BOOST_TEST(ptr_numa_1 != nullptr);
+  BOOST_TEST(ptr_numa_99 != nullptr);
+
+  sycl::free(ptr_no_node, q);
+  sycl::free(ptr_numa_1, q);
+  sycl::free(ptr_numa_99, q);
+#endif
+
+}
+#endif
+#ifdef SYCL_KHR_DEFAULT_CONTEXT
+BOOST_AUTO_TEST_CASE(khr_default_context) {
+  sycl::queue q1;
+  sycl::queue q2;
+
+  BOOST_CHECK(q1.get_context() == q2.get_context());
+  BOOST_CHECK(q1.get_device().get_platform().khr_get_default_context() ==
+              q1.get_context());
+  BOOST_CHECK(sycl::context{} != q1.get_context());
+}
+#endif
+#ifdef SYCL_KHR_QUEUE_EMPTY_QUERY
+BOOST_AUTO_TEST_CASE(khr_queue_empty) {
+  sycl::queue q;
+  sycl::queue in_order_q{sycl::property::queue::in_order{}};
+
+  BOOST_CHECK(q.khr_empty());
+  BOOST_CHECK(in_order_q.khr_empty());
+
+  q.single_task([](){});
+  in_order_q.single_task([](){});
+  q.wait();
+  in_order_q.wait();
+
+  BOOST_CHECK(q.khr_empty());
+  BOOST_CHECK(in_order_q.khr_empty());
 }
 #endif
 

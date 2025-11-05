@@ -14,11 +14,10 @@
 #include <type_traits>
 
 #include "sycl_test_suite.hpp"
-using namespace cl;
 
 BOOST_FIXTURE_TEST_SUITE(marray_tests, reset_device_fixture)
 
-using marray_test_types = boost::mpl::list<
+using marray_test_types = boost::mp11::mp_list<
   float,
   double,
   short,
@@ -78,7 +77,7 @@ void test(sycl::queue& q) {
 
 }
 
-BOOST_AUTO_TEST_CASE_TEMPLATE(marray_ops, T, marray_test_types::type) {
+BOOST_AUTO_TEST_CASE_TEMPLATE(marray_ops, T, marray_test_types) {
   sycl::queue q;
   
   test<T, 1>(q);

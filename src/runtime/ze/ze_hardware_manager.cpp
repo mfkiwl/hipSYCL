@@ -301,6 +301,18 @@ std::size_t ze_hardware_context::get_property(device_uint_property prop) const {
   case device_uint_property::max_compute_units:
     return _props.numSlices * _props.numSubslicesPerSlice * _props.numEUsPerSubslice;
     break;
+  case device_uint_property::max_work_group_range0:
+    return _compute_props.maxGroupSizeX;
+    break;
+  case device_uint_property::max_work_group_range1:
+    return _compute_props.maxGroupSizeY;
+    break;
+  case device_uint_property::max_work_group_range2:
+    return _compute_props.maxGroupSizeZ;
+    break;
+  case device_uint_property::max_work_group_range_size:
+    return std::numeric_limits<std::size_t>::max();
+    break;
   case device_uint_property::max_global_size0:
     return _compute_props.maxGroupSizeX * _compute_props.maxGroupCountX;
     break;
@@ -449,6 +461,17 @@ std::size_t ze_hardware_context::get_property(device_uint_property prop) const {
   case device_uint_property::vendor_id:
     return _props.vendorId;
     break;
+  case device_uint_property::architecture:
+    // TODO
+    return 0;
+    break;
+  case device_uint_property::backend_id:
+    return static_cast<int>(backend_id::level_zero);
+    break;
+  case device_uint_property::queue_priority_range_low:
+  case device_uint_property::queue_priority_range_high:
+    return 0;
+    break;
   }
   assert(false && "Invalid device property");
   std::terminate();
@@ -504,6 +527,15 @@ uint32_t ze_hardware_context::get_ze_global_memory_ordinal() const {
 
   return result;
 }
+
+std::size_t ze_hardware_context::get_platform_index() const {
+  return 0;
+}
+
+std::size_t ze_hardware_manager::get_num_platforms() const {
+  return 1;
+}
+
 
 ze_hardware_manager::ze_hardware_manager() {
 

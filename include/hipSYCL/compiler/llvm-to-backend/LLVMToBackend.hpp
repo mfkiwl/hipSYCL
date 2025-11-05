@@ -11,6 +11,11 @@
 #ifndef HIPSYCL_LLVM_TO_BACKEND_HPP
 #define HIPSYCL_LLVM_TO_BACKEND_HPP
 
+#ifndef _WIN32
+#define ACPP_BACKEND_API_EXPORT
+#else
+#define ACPP_BACKEND_API_EXPORT __declspec(dllexport)
+#endif
 
 // Note: This file should not include any LLVM headers or include
 // dependencies that rely on LLVM headers in order to not spill
@@ -23,7 +28,8 @@
 #include <typeinfo>
 #include <functional>
 #include "AddressSpaceMap.hpp"
-#include "hipSYCL/glue/llvm-sscp/s2_ir_constants.hpp"
+#include "hipSYCL/compiler/llvm-to-backend/NameHandling.hpp"
+#include "hipSYCL/glue/llvm-sscp/jit-reflection/queries.hpp"
 #include "hipSYCL/runtime/util.hpp"
 
 namespace llvm {
@@ -36,10 +42,9 @@ namespace compiler {
 
 struct PassHandler;
 
-struct TranslationHints {
-  std::optional<std::size_t> RequestedLocalMemSize;
-  std::optional<std::size_t> SubgroupSize;
-  std::optional<rt::range<3>> WorkGroupSize;
+struct KernelStats {
+  std::string Name;
+  bool IsFreeOfIndirectAccess;
 };
 
 class LLVMToBackendTranslator {
@@ -50,28 +55,15 @@ public:
 
   virtual ~LLVMToBackendTranslator() {}
 
-  // Do not use inside llvm-to-backend infrastructure targets to avoid
-  // requiring RTTI-enabled LLVM
-  template<auto& ConstantName, class T>
-  void setS2IRConstant(const T& value) {
-    static_assert(std::is_integral_v<T> || std::is_floating_point_v<T>,
-                  "Unsupported type for S2 IR constant");
-
-    std::string name = typeid(__acpp_sscp_s2_ir_constant<ConstantName, T>).name();
-    setS2IRConstant<T>(name, value);
-  }
-
-  template<class T>
-  void setS2IRConstant(const std::string& name, T value) {
-    setS2IRConstant(name, static_cast<const void*>(&value));
-  }
-
-  void setS2IRConstant(const std::string& name, const void* ValueBuffer);
+  void setNoAliasKernelParam(const std::string& KernelName, int ParamIndex);
+  void setNoAliasIfNoIndirectAccessKernelParam(const std::string &KernelName, int ParamIndex);
   void specializeKernelArgument(const std::string &KernelName, int ParamIndex,
                                 const void *ValueBuffer);
   void specializeFunctionCalls(const std::string &FuncName,
                              const std::vector<std::string> &ReplacementCalls,
                              bool OverrideOnlyUndefined=true);
+
+  void setKnownPtrParamAlignment(const std::string &FunctionName, int ParamIndex, int Alignment);
 
   bool setBuildFlag(const std::string &Flag);
   bool setBuildOption(const std::string &Option, const std::string &Value);
@@ -82,6 +74,8 @@ public:
     return setBuildOption(Option, std::to_string(Value));
   }
 
+  void setReflectionField(const std::string& name, uint64_t value);
+
   // Does partial transformation to backend-flavored LLVM IR
   bool partialTransformation(const std::string& LLVMIR, std::string& out);
 
@@ -89,7 +83,6 @@ public:
   bool fullTransformation(const std::string& LLVMIR, std::string& out);
   bool prepareIR(llvm::Module& M);
   bool translatePreparedIR(llvm::Module& FlavoredModule, std::string& out);
-
 
   const std::vector<std::string>& getErrorLog() const {
     return Errors;
@@ -106,6 +99,10 @@ public:
 
   const std::vector<std::string>& getKernels () const {
     return Kernels;
+  }
+
+  const std::vector<KernelStats>& getCompiledKernelStats() const {
+    return KernelCompilationStats;
   }
 
   std::string getErrorLogAsString() const {
@@ -222,6 +219,9 @@ protected:
   bool GlobalSizesFitInInt = false;
   bool IsFastMath = false;
 
+  // If runtime/user wants a specific subgroup size, this value will be > 0.
+  int DesiredSubgroupSize = -1;
+
 private:
 
   void resolveExternalSymbols(llvm::Module& M);
@@ -229,12 +229,18 @@ private:
   void runKernelDeadArgumentElimination(llvm::Module &M, llvm::Function *F, PassHandler &PH,
                                         std::vector<int>& RetainedIndicesOut);
 
+  std::string getCompilationIdentifier() const;
+
   int S2IRConstantBackendId;
   
   std::vector<std::string> OutliningEntrypoints;
+  // function call specializations might result in additional outlining entrypoints
+  // that we need to consider early on
+  std::vector<std::string> FunctionCallSpecializationOutliningEntrypoints;
   std::vector<std::string> Kernels;
 
   std::vector<std::string> Errors;
+  
   std::unordered_map<std::string, std::function<void(llvm::Module &)>> SpecializationApplicators;
   ExternalSymbolResolver SymbolResolver;
   bool HasExternalSymbolResolver = false;
@@ -243,6 +249,14 @@ private:
   std::string ErroringCode;
 
   std::vector<std::pair<std::string, std::vector<int>*>> FunctionsForDeadArgumentElimination;
+  std::unordered_map<std::string, std::vector<int>> NoAliasParameters;
+  std::unordered_map<std::string, std::vector<int>> NoAliasIfNoIndirectAccessParameters;
+
+  // map from kernel name to list of (param index, alignment)
+  std::unordered_map<std::string, std::vector<std::pair<int, int>>> KnownPtrParamAlignments;
+  std::unordered_map<std::string, uint64_t> ReflectionFields;
+
+  std::vector<KernelStats> KernelCompilationStats;
 
 };
 

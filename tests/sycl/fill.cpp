@@ -14,10 +14,10 @@
 #include <boost/test/unit_test_suite.hpp>
 
 template <int d>
-void fill_test_helper(cl::sycl::id<d> offset = cl::sycl::id<d>{}) {
-  namespace s = cl::sycl;
+void fill_test_helper(sycl::id<d> offset = sycl::id<d>{}) {
+  namespace s = sycl;
 
-  cl::sycl::queue q;
+  s::queue q;
 
   auto buff_size = make_test_value<s::range, d>({64}, {64, 64}, {64, 64, 64});
   s::buffer<s::id<d>, d> buff{buff_size};
@@ -73,14 +73,14 @@ void fill_test_helper(cl::sycl::id<d> offset = cl::sycl::id<d>{}) {
 BOOST_FIXTURE_TEST_SUITE(fill_tests, reset_device_fixture)
 
 BOOST_AUTO_TEST_CASE_TEMPLATE(fill_buffer, _dimensions,
-  test_dimensions::type) {
+  test_dimensions) {
 
   fill_test_helper<_dimensions::value>();
 }
 
 BOOST_AUTO_TEST_CASE_TEMPLATE(fill_with_offset, _dimensions,
-                              test_dimensions::type) {
-  namespace s = cl::sycl;
+                              test_dimensions) {
+  namespace s = sycl;
   auto offset = make_test_value<s::id, _dimensions::value>({8}, {8, 8}, {8, 8, 8});
   fill_test_helper<_dimensions::value>(offset);
 }

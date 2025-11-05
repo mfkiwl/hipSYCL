@@ -17,11 +17,13 @@
 #include "../device_id.hpp"
 #include "hipSYCL/common/spin_lock.hpp"
 #include "hipSYCL/glue/llvm-sscp/jit.hpp"
+#include "hipSYCL/glue/llvm-sscp/jit-reflection/reflection_map.hpp"
 
 namespace hipsycl {
 namespace rt {
 
 class omp_queue;
+class omp_backend;
 
 class omp_sscp_code_object_invoker : public sscp_code_object_invoker {
 public:
@@ -50,7 +52,7 @@ private:
 class omp_queue : public inorder_queue
 {
 public:
-  omp_queue(backend_id id);
+  omp_queue(omp_backend* be, int dev);
   virtual ~omp_queue();
 
   /// Inserts an event into the stream
@@ -75,12 +77,11 @@ public:
   virtual result query_status(inorder_queue_status& status) override;
 
   result submit_sscp_kernel_from_code_object(
-      const kernel_operation &op, hcf_object_id hcf_object,
-      const std::string_view kernel_name,
+      hcf_object_id hcf_object, const std::string_view kernel_name,
       const rt::hcf_kernel_info *kernel_info, const rt::range<3> &num_groups,
       const rt::range<3> &group_size, unsigned local_mem_size, void **args,
       std::size_t *arg_sizes, std::size_t num_args,
-      const kernel_configuration &config);
+      const kernel_configuration &config) override;
 
   worker_thread& get_worker();
 private:
@@ -94,6 +95,7 @@ private:
   common::spin_lock _sscp_submission_spin_lock;
   glue::jit::cxx_argument_mapper _arg_mapper;
   kernel_configuration _config;
+  glue::jit::reflection_map _reflection_map;
 };
 
 }

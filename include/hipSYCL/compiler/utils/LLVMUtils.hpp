@@ -11,7 +11,8 @@
 #ifndef HIPSYCL_LLVMUTILS_HPP
 #define HIPSYCL_LLVMUTILS_HPP
 
-
+#include <llvm/ADT/StringRef.h>
+#include <llvm/IR/Instruction.h>
 #if LLVM_VERSION_MAJOR < 16
 #define IS_OPAQUE(pointer) (pointer->isOpaquePointerTy())
 #define HAS_TYPED_PTR 1
@@ -19,5 +20,32 @@
 #define IS_OPAQUE(pointer) constexpr(true || pointer) /* Use `pointer` to silence warnings */
 #define HAS_TYPED_PTR 0
 #endif
+
+namespace hipsycl::llvmutils {
+
+  inline bool starts_with(llvm::StringRef String, llvm::StringRef Prefix) {
+#if LLVM_VERSION_MAJOR < 18
+    return String.startswith(Prefix);
+#else
+    return String.starts_with(Prefix);
+#endif
+  }
+
+  inline bool ends_with(llvm::StringRef String, llvm::StringRef Prefix) {
+#if LLVM_VERSION_MAJOR < 18
+    return String.endswith(Prefix);
+#else
+    return String.ends_with(Prefix);
+#endif
+  }
+
+  inline auto makeInsertionPoint(llvm::Instruction* InsertionPt) {
+#if LLVM_VERSION_MAJOR < 20
+    return InsertionPt;
+#else
+    return InsertionPt->getIterator();
+#endif
+  }
+}// namespace hipsycl::llvmutils
 
 #endif // HIPSYCL_LLVMUTILS_HPP

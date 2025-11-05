@@ -17,8 +17,6 @@
 #include "sycl_test_suite.hpp"
 #include <boost/test/unit_test_suite.hpp>
 
-using namespace cl;
-
 BOOST_FIXTURE_TEST_SUITE(usm_tests, reset_device_fixture)
 
 BOOST_AUTO_TEST_CASE(allocation_functions) {
@@ -169,6 +167,8 @@ BOOST_AUTO_TEST_CASE(in_order_queue) {
 
   BOOST_CHECK(evt3.get_wait_list().size() == 1);
   BOOST_CHECK(evt3.get_wait_list()[0] == evt2);
+
+  q.wait();
 }
 
 BOOST_AUTO_TEST_CASE(allocations_in_kernels) {

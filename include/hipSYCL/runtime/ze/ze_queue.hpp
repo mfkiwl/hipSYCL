@@ -18,6 +18,7 @@
 #include "../executor.hpp"
 #include "../inorder_queue.hpp"
 #include "hipSYCL/glue/llvm-sscp/jit.hpp"
+#include "hipSYCL/glue/llvm-sscp/jit-reflection/reflection_map.hpp"
 #include "hipSYCL/runtime/code_object_invoker.hpp"
 #include "hipSYCL/runtime/event.hpp"
 #include "hipSYCL/runtime/hints.hpp"
@@ -68,11 +69,11 @@ public:
   }
 
   result submit_sscp_kernel_from_code_object(
-      const kernel_operation &op, hcf_object_id hcf_object,
-      std::string_view kernel_name, const rt::hcf_kernel_info *kernel_info,
-      const rt::range<3> &num_groups, const rt::range<3> &group_size,
-      unsigned local_mem_size, void **args, std::size_t *arg_sizes,
-      std::size_t num_args, const kernel_configuration &config);
+      hcf_object_id hcf_object, std::string_view kernel_name,
+      const rt::hcf_kernel_info *kernel_info, const rt::range<3> &num_groups,
+      const rt::range<3> &group_size, unsigned local_mem_size, void **args,
+      std::size_t *arg_sizes, std::size_t num_args,
+      const kernel_configuration &config) override;
 
 private:
   const std::vector<std::shared_ptr<dag_node_event>>&
@@ -107,6 +108,7 @@ private:
   // SSCP submission data
   glue::jit::cxx_argument_mapper _arg_mapper;
   kernel_configuration _config;  
+  glue::jit::reflection_map _reflection_map;
 };
 
 }

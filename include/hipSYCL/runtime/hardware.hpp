@@ -41,6 +41,10 @@ enum class device_support_aspect {
 
 enum class device_uint_property {
   max_compute_units,
+  max_work_group_range0,
+  max_work_group_range1,
+  max_work_group_range2,
+  max_work_group_range_size,
   max_global_size0,
   max_global_size1,
   max_global_size2,
@@ -93,7 +97,12 @@ enum class device_uint_property {
   printf_buffer_size,
   partition_max_sub_devices,
 
-  vendor_id
+  vendor_id,
+  architecture,
+  backend_id,
+
+  queue_priority_range_low,
+  queue_priority_range_high
 };
 
 enum class device_uint_list_property {
@@ -125,6 +134,8 @@ public:
 
   virtual std::string get_driver_version() const = 0;
   virtual std::string get_profile() const = 0;
+
+  virtual std::size_t get_platform_index() const= 0;
   
   virtual ~hardware_context(){}
 };
@@ -133,6 +144,8 @@ class backend_hardware_manager
 {
 public:
   virtual std::size_t get_num_devices() const = 0;
+  virtual std::size_t get_num_platforms() const = 0;
+
   virtual hardware_context *get_device(std::size_t index) = 0;
   virtual device_id get_device_id(std::size_t index) const = 0;
 

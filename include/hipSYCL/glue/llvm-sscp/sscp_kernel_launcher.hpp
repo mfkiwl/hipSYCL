@@ -29,6 +29,7 @@
 #include "hipSYCL/sycl/libkernel/sp_group.hpp"
 #include "hipSYCL/sycl/libkernel/group.hpp"
 #include "ir_constants.hpp"
+#include "hcf_registration.hpp"
 #include "../kernel_launcher_data.hpp"
 
 #include <array>
@@ -62,6 +63,7 @@ void __acpp_sscp_kernel(const KernelType& kernel) {
 // No indirection is allowed! If I say, the argument has to be a global variable,
 // I mean it. Directly. No passing through other functions first.
 template <class Kernel>
+[[clang::annotate("acpp_sscp_extract_kernel_name")]]
 void __acpp_sscp_extract_kernel_name(void (*Func)(const Kernel&),
                                         const char *target);
 #pragma clang diagnostic pop
@@ -70,30 +72,6 @@ namespace hipsycl {
 namespace glue {
 
 namespace sscp {
-
-static std::string get_local_hcf_object() {
-  return std::string{
-      reinterpret_cast<const char *>(__acpp_local_sscp_hcf_content),
-      __acpp_local_sscp_hcf_object_size};
-}
-
-// TODO: Maybe this can be unified with the ACPP_STATIC_HCF_REGISTRATION
-// macro. We cannot use this macro directly because it expects
-// the object id to be constexpr, which it is not for the SSCP case.
-struct static_hcf_registration {
-  static_hcf_registration(const std::string& hcf_data) {
-    this->_hcf_object = rt::hcf_cache::get().register_hcf_object(
-        common::hcf_container{hcf_data});
-  }
-
-  ~static_hcf_registration() {
-    rt::hcf_cache::get().unregister_hcf_object(_hcf_object);
-  }
-private:
-  rt::hcf_object_id _hcf_object;
-};
-static static_hcf_registration
-    __acpp_register_sscp_hcf_object{get_local_hcf_object()};
 
 
 // This class effectively caches queries into the HCF cache: For each
@@ -295,7 +273,12 @@ public:
       
     } else if constexpr (type == rt::kernel_type::custom) {
       // handled at invoke time
-      data.custom_op = k;
+      data.custom_op = [k](rt::kernel_operation * kernel_op, sycl::interop_handle& ih) mutable {
+          kernel_op->initialize_embedded_pointers(
+              static_cast<void*>(&k),
+              sizeof(Kernel));
+          k(ih);
+       };
     }
     else {
       assert(false && "Unsupported kernel type");
@@ -313,8 +296,9 @@ public:
       assert(backend_params);
       sycl::interop_handle handle{node->get_assigned_device(),
                                   backend_params};
-
-      launch_config.custom_op(handle);
+      auto *kernel_op =
+          static_cast<rt::kernel_operation *>(node->get_operation());
+      launch_config.custom_op(kernel_op, handle);
 
       return rt::make_success();
     } else {

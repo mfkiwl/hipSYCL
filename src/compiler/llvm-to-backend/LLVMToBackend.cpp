@@ -15,11 +15,16 @@
 #include "hipSYCL/compiler/llvm-to-backend/GlobalInliningAttributorPass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/KnownGroupSizeOptPass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/LLVMToBackend.hpp"
+#include "hipSYCL/compiler/llvm-to-backend/NameHandling.hpp"
+#include "hipSYCL/compiler/llvm-to-backend/KnownPtrParamAlignmentOptPass.hpp"
+#include "hipSYCL/compiler/llvm-to-backend/ProcessS2ReflectionPass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/Utils.hpp"
 #include "hipSYCL/compiler/sscp/IRConstantReplacer.hpp"
 #include "hipSYCL/compiler/sscp/KernelOutliningPass.hpp"
+#include "hipSYCL/compiler/utils/IndirectAccess.hpp"
 #include "hipSYCL/compiler/utils/ProcessFunctionAnnotationsPass.hpp"
-#include "hipSYCL/glue/llvm-sscp/s2_ir_constants.hpp"
+#include "hipSYCL/compiler/utils/LLVMUtils.hpp"
+#include "hipSYCL/glue/llvm-sscp/jit-reflection/queries.hpp"
 
 #include <cstdint>
 
@@ -37,21 +42,106 @@
 #include <llvm/Linker/Linker.h>
 #include <llvm/Passes/PassBuilder.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/FileSystem.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/Transforms/IPO/AlwaysInliner.h>
 #include <string>
+#include <optional>
+#include <cstdlib>
+#include <sstream>
+#include <unordered_set>
 
 namespace hipsycl {
 namespace compiler {
 
 namespace {
 
+template<class T>
+std::optional<T> getEnvironmentVariable(const std::string& Name) {
+  std::string EnvName = Name;
+  std::transform(EnvName.begin(), EnvName.end(), EnvName.begin(), ::toupper);
+
+  if(const char* EnvVal = std::getenv(("ACPP_S2_"+EnvName).c_str())) {
+    T val;
+    std::stringstream sstr{std::string{EnvVal}};
+    sstr >> val;
+    if (!sstr.fail() && !sstr.bad()) {
+      return val;
+    }
+  }
+  return {};
+}
+
+template<class T>
+T getEnvironmentVariableOrDefault(const std::string& Name,
+                                      const T& Default) {
+  std::optional<T> v = getEnvironmentVariable<T>(Name);
+  if(v.has_value()) {
+    return v.value();
+  }
+  return Default;
+}
+
+void printModuleToFile(llvm::Module& M, const std::string& File,
+                      const std::string& Header){
+
+  // Desired behavior is to truncate files for each application run,
+  // but append content in the dump file within one application run.
+  static std::unordered_set<std::string> UsedFiles;
+  auto OpenFlag = llvm::sys::fs::OpenFlags::OF_Append;
+  if(UsedFiles.find(File) == UsedFiles.end()) {
+    OpenFlag = llvm::sys::fs::OpenFlags::OF_None;
+    UsedFiles.insert(File);
+  }
+
+  std::error_code EC;
+  llvm::raw_fd_ostream Out{File, EC, OpenFlag};
+  Out << ";---------------- Begin AdaptiveCpp IR dump --------------\n";
+  Out << Header;
+  M.print(Out, nullptr);
+  Out << ";----------------- End AdaptiveCpp IR dump ---------------\n";
+}
+
+void enableModuleStateDumping(llvm::Module &M, const std::string &PipelineStage,
+                              const std::string &Kernels) {
+  std::string Filter =
+      getEnvironmentVariableOrDefault<std::string>("DUMP_IR_FILTER", "");
+
+  std::string FallbackFileName = M.getSourceFileName()+".ll";
+  std::string FileName =
+      getEnvironmentVariableOrDefault<std::string>("DUMP_IR_" + PipelineStage, "");
+
+  if(FileName == "1")
+    FileName = FallbackFileName;
+  
+  std::string Header =
+      "; AdaptiveCpp SSCP S2 IR dump; Compiling kernels: " + Kernels + ", stage: " + PipelineStage + "\n";
+
+  if(FileName.length() != 0) {
+    if(Kernels == Filter || Filter.empty())
+      printModuleToFile(M, FileName, Header);
+  }
+
+  std::string AllFileName =
+      getEnvironmentVariableOrDefault<std::string>("DUMP_IR_ALL", "");
+  if(AllFileName == "1")
+    AllFileName = FallbackFileName;
+
+  if(AllFileName.length() != 0 && AllFileName != FileName) {
+    if(Kernels == Filter || Filter.empty())
+      printModuleToFile(M, AllFileName, Header);
+  }
+}
+
 bool linkBitcode(llvm::Module &M, std::unique_ptr<llvm::Module> OtherM,
                    const std::string &ForcedTriple = "",
                    const std::string &ForcedDataLayout = "",
                    llvm::Linker::Flags Flags = llvm::Linker::Flags::LinkOnlyNeeded) {
   if(!ForcedTriple.empty())
+#if LLVM_VERSION_MAJOR > 20
+    OtherM->setTargetTriple(llvm::Triple(ForcedTriple));
+#else
     OtherM->setTargetTriple(ForcedTriple);
+#endif
   if(!ForcedDataLayout.empty())
     OtherM->setDataLayout(ForcedDataLayout);
 
@@ -65,7 +155,7 @@ bool linkBitcode(llvm::Module &M, std::unique_ptr<llvm::Module> OtherM,
 void setFastMathFunctionAttribs(llvm::Module& M) {
   auto forceAttr = [&](llvm::Function& F, llvm::StringRef Key, llvm::StringRef Value) {
     if(F.hasFnAttribute(Key)) {
-      if(!F.getFnAttribute(Key).getValueAsString().equals(Value))
+      if(F.getFnAttribute(Key).getValueAsString() != Value)
         F.removeFnAttr(Key);
     }
     F.addFnAttr(Key, Value);
@@ -96,12 +186,14 @@ public:
       for(auto& BB : F) {
         for(auto& I : BB) {
           if(llvm::CallBase* CB = llvm::dyn_cast<llvm::CallBase>(&I)) {
-            // these instructions can sometimes appear as a byproduct of some transformations
-            // even without dynamic allocas, but they are generally unsupported on device
-            // backends.
-            if (CB->getCalledFunction()->getName().startswith("llvm.stacksave") ||
-                CB->getCalledFunction()->getName().startswith("llvm.stackrestore"))
-              CallsToRemove.push_back(CB);
+            if(CB->getCalledFunction()) {
+              // these instructions can sometimes appear as a byproduct of some transformations
+              // even without dynamic allocas, but they are generally unsupported on device
+              // backends.
+              if (llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.stacksave") ||
+                  llvmutils::starts_with(CB->getCalledFunction()->getName(), "llvm.stackrestore"))
+                CallsToRemove.push_back(CB);
+            }
           }
         }
       }
@@ -152,6 +244,8 @@ bool LLVMToBackendTranslator::setBuildOption(const std::string &Option, const st
     return true;
   } else if (Option == "known-local-mem-size") {
     KnownLocalMemSize = std::stoi(Value);
+  } else if (Option == "desired-subgroup-size") {
+    DesiredSubgroupSize = std::stoi(Value);
   }
 
   return applyBuildOption(Option, Value);
@@ -217,42 +311,79 @@ bool LLVMToBackendTranslator::fullTransformation(const std::string &LLVMIR, std:
 }
 
 bool LLVMToBackendTranslator::prepareIR(llvm::Module &M) {
+  enableModuleStateDumping(M, "input", getCompilationIdentifier());
+
   HIPSYCL_DEBUG_INFO << "LLVMToBackend: Preparing backend flavoring...\n";
 
-  if(!this->prepareBackendFlavor(M))
-    return false;
-
-  // We need to resolve symbols now instead of after optimization, because we
-  // may have to reuotline if the code that is linked in after symbol resolution
-  // depends on IR constants.
-  // This also means that we cannot error yet if we cannot resolve all symbols :(
-  resolveExternalSymbols(M);
-
-  HIPSYCL_DEBUG_INFO << "LLVMToBackend: Applying specializations and S2 IR constants...\n";
-  for(auto& A : SpecializationApplicators) {
-    HIPSYCL_DEBUG_INFO << "LLVMToBackend: Processing specialization " << A.first << "\n";
-    A.second(M);
-  }
-  // Return error in case applying specializations has caused error list to be populated
-  if(!Errors.empty())
-    return false;
-
-  bool ContainsUnsetIRConstants = false;
-  bool FlavoringSuccessful = false;
-  bool OptimizationSuccessful = false;
-
-  constructPassBuilderAndMAM([&](llvm::PassBuilder &PB, llvm::ModuleAnalysisManager &MAM) {
+  return withPassBuilderAndMAM([&](llvm::PassBuilder &PB, llvm::ModuleAnalysisManager &MAM) {
     PassHandler PH {&PB, &MAM};
+
+    // Do an initial outlining to simplify the code, particularly to reduce
+    // linking complexity if --acpp-export-all is used
+    HIPSYCL_DEBUG_INFO << "LLVMToBackend: Reoutlining kernels...\n";
+    // Function call specializations are only handled at a later stage,
+    // so if the user has requested any, ensure that we don't throw them away
+    // since these functions will not yet appear in the call graph.
+    std::vector<std::string> InitialOutliningEntrypoints = OutliningEntrypoints;
+    for(const auto& FName : FunctionCallSpecializationOutliningEntrypoints)
+      InitialOutliningEntrypoints.push_back(FName);
+    KernelOutliningPass InitialOutlining{InitialOutliningEntrypoints};
+    InitialOutlining.run(M, MAM);
+    enableModuleStateDumping(M, "initial_outlining", getCompilationIdentifier());
+    // We need to resolve symbols now instead of after optimization, because we
+    // may have to reoutline if the code that is linked in after symbol resolution
+    // depends on IR constants.
+    // This also means that we cannot error yet if we cannot resolve all symbols :(
+    resolveExternalSymbols(M);
+
+    if(!this->prepareBackendFlavor(M))
+      return false;
+
+    HIPSYCL_DEBUG_INFO << "LLVMToBackend: Applying specializations and S2 IR constants...\n";
+    for(auto& A : SpecializationApplicators) {
+      HIPSYCL_DEBUG_INFO << "LLVMToBackend: Processing specialization " << A.first << "\n";
+      A.second(M);
+    }
+    // Return error in case applying specializations has caused error list to be populated
+    if(!Errors.empty())
+      return false;
+    
+    enableModuleStateDumping(M, "specialization", getCompilationIdentifier());
+
+    // Process stage 2 reflection calls
+    ReflectionFields["compiler_backend"] = this->getBackendId();
+    for(const auto& Fields : ReflectionFields) {
+      HIPSYCL_DEBUG_INFO << "LLVMToBackend: Setting up reflection fields: " << Fields.first << " = "
+                         << Fields.second << "\n";
+    }
+    ProcessS2ReflectionPass S2RP{ReflectionFields};
+    S2RP.run(M, MAM);
+
+    enableModuleStateDumping(M, "reflection", getCompilationIdentifier());
 
     // Optimize away unnecessary branches due to backend-specific S2IR constants
     // This is what allows us to specialize code for different backends.
     HIPSYCL_DEBUG_INFO << "LLVMToBackend: Optimizing branches post S2 IR constant application...\n";
     IRConstant::optimizeCodeAfterConstantModification(M, MAM);
+
     // Rerun kernel outlining pass so that we don't include unneeded functions
     // that are specific to other backends.
     HIPSYCL_DEBUG_INFO << "LLVMToBackend: Reoutlining kernels...\n";
     KernelOutliningPass KP{OutliningEntrypoints};
     KP.run(M, MAM);
+
+    for(auto& P : NoAliasParameters) {
+      auto* F = M.getFunction(P.first);
+      if(F) {
+        for(int i : P.second) {
+          HIPSYCL_DEBUG_INFO << "LLVMToBackend: Attaching noalias attribute to parameter " << i
+                             << " of kernel " << P.first << "\n";
+          if(i < F->getFunctionType()->getNumParams())
+            if(!F->hasParamAttribute(i, llvm::Attribute::AttrKind::NoAlias))
+              F->addParamAttr(i, llvm::Attribute::AttrKind::NoAlias);
+        }
+      }
+    }
 
     // These optimizations should be run before __acpp_sscp_* builtins
     // are resolved, so before backend bitcode libraries are linked. We thus
@@ -260,8 +391,12 @@ bool LLVMToBackendTranslator::prepareIR(llvm::Module &M) {
     KnownGroupSizeOptPass GroupSizeOptPass{KnownGroupSizeX, KnownGroupSizeY, KnownGroupSizeZ};
     GlobalSizesFitInI32OptPass SizesAsIntOptPass{GlobalSizesFitInInt, KnownGroupSizeX,
                                                  KnownGroupSizeY, KnownGroupSizeZ};
+
     GroupSizeOptPass.run(M, MAM);
     SizesAsIntOptPass.run(M, MAM);
+
+    KnownPtrParamAlignmentOptPass KnownAlignmentOptPass{KnownPtrParamAlignments};
+    KnownAlignmentOptPass.run(M, MAM);
 
     // Before optimizing, make sure everything has internal linkage to
     // help inlining. All linking should have occured by now, except
@@ -279,56 +414,112 @@ bool LLVMToBackendTranslator::prepareIR(llvm::Module &M) {
     InstructionCleanupPass ICP;
     ICP.run(M, MAM);
 
+    enableModuleStateDumping(M, "jit_optimizations", getCompilationIdentifier());
+
     HIPSYCL_DEBUG_INFO << "LLVMToBackend: Adding backend-specific flavor to IR...\n";
-    FlavoringSuccessful = this->toBackendFlavor(M, PH);
+    if(!this->toBackendFlavor(M, PH)) {
+      HIPSYCL_DEBUG_INFO << "LLVMToBackend: Flavoring failed\n";
+      return false;
+    }
+
+    enableModuleStateDumping(M, "backend_flavoring", getCompilationIdentifier());
+    // Run again to resolve reflection inside builtins
+    S2RP.run(M, MAM);
+    enableModuleStateDumping(M, "builtin_reflection", getCompilationIdentifier());
+
     // Inline again to handle builtin definitions pulled in by backend flavors
     InliningPass.run(M, MAM);
 
-    if(FlavoringSuccessful) {
-      // Run optimizations
-      HIPSYCL_DEBUG_INFO << "LLVMToBackend: Optimizing flavored IR...\n";
+    // Run optimizations
+    HIPSYCL_DEBUG_INFO << "LLVMToBackend: Optimizing flavored IR...\n";
 
-      if(IsFastMath)
-        setFastMathFunctionAttribs(M);
+    if(IsFastMath)
+      setFastMathFunctionAttribs(M);
 
-      // Remove argument_used hints, which are no longer needed once we enter optimization stage.
-      // This is primarily needed for dynamic functions.
-      utils::ProcessFunctionAnnotationPass PFA({"argument_used"});
-      PFA.run(M, MAM);
+    // Remove argument_used hints, which are no longer needed once we enter optimization stage.
+    // This is primarily needed for dynamic functions.
+    utils::ProcessFunctionAnnotationPass PFA({"argument_used"});
+    PFA.run(M, MAM);
 
-      MAM.clear();
+    MAM.clear(); 
 
-      OptimizationSuccessful = optimizeFlavoredIR(M, PH);
-
-      if(!OptimizationSuccessful) {
-        this->registerError("LLVMToBackend: Optimization failed");
-      }
-
-      for(const auto& Entry : FunctionsForDeadArgumentElimination) {
-        if(auto* F = M.getFunction(Entry.first)) {
-          if(isKernelAfterFlavoring(*F)) {
-            runKernelDeadArgumentElimination(M, F, PH, *Entry.second);
-          }
-        }
-      }
-      llvm::AlwaysInlinerPass AIP;
-      AIP.run(M, MAM);
-
-      S2IRConstant::forEachS2IRConstant(M, [&](S2IRConstant C) {
-        if (C.isValid()) {
-          if (!C.isInitialized()) {
-            ContainsUnsetIRConstants = true;
-            this->registerError("LLVMToBackend: AdaptiveCpp S2IR constant was not set: " +
-                                C.getGlobalVariable()->getName().str());
-          }
-        }
-      });
-    } else {
-      HIPSYCL_DEBUG_INFO << "LLVMToBackend: Flavoring failed\n";
+    if(!optimizeFlavoredIR(M, PH)) {
+      this->registerError("LLVMToBackend: Optimization failed");
+      return false;
     }
-  });
 
-  return FlavoringSuccessful && OptimizationSuccessful && !ContainsUnsetIRConstants;
+    // After optimizations, we can check for indirect access effectively.
+    // But we need to handle noalias-if-no-indirect-access before
+    // dead argument elimination, since parameter index won't be correct
+    // anymore afterwards!
+    llvm::SmallDenseMap<llvm::Function*, bool> KernelIsFreeOfIndirectAccess;
+    for(const auto& KN : Kernels) {
+      if(auto* F = M.getFunction(KN)) {
+        KernelIsFreeOfIndirectAccess[F] = utils::IsFunctionFreeOfIndirectAccess(F);
+      }
+    }
+
+    for(auto& P : NoAliasIfNoIndirectAccessParameters) {
+      auto* F = M.getFunction(P.first);
+      auto IsFreeOfIndirectAccess = [&](auto* F) -> bool {
+        auto It = KernelIsFreeOfIndirectAccess.find(F);
+        if(It != KernelIsFreeOfIndirectAccess.end())
+          return It->second;
+        return utils::IsFunctionFreeOfIndirectAccess(F); 
+      };
+
+      if(F && IsFreeOfIndirectAccess(F)) {
+        for (int i : P.second) {
+          HIPSYCL_DEBUG_INFO << "LLVMToBackend: Attaching noalias attribute to parameter " << i
+                              << " of kernel " << P.first << "\n";
+          if (i < F->getFunctionType()->getNumParams())
+            if (!F->hasParamAttribute(i, llvm::Attribute::AttrKind::NoAlias))
+              F->addParamAttr(i, llvm::Attribute::AttrKind::NoAlias);
+        }
+      } else {
+        HIPSYCL_DEBUG_INFO << "LLVMToBackend: Cannot prove that kernel " << P.first
+                           << " does not perform indirect access; not attaching noalias attribute"
+                           << "\n";
+      }
+    }
+
+    for(const auto& Entry : FunctionsForDeadArgumentElimination) {
+      if(auto* F = M.getFunction(Entry.first)) {
+        if(isKernelAfterFlavoring(*F)) {
+          runKernelDeadArgumentElimination(M, F, PH, *Entry.second);
+        }
+      }
+    }
+    llvm::AlwaysInlinerPass{}.run(M, MAM);
+
+    enableModuleStateDumping(M, "full_optimizations", getCompilationIdentifier());
+    
+    enableModuleStateDumping(M, "final", getCompilationIdentifier());
+
+    bool ContainsUnsetIRConstants = false;
+    S2IRConstant::forEachS2IRConstant(M, [&](S2IRConstant C) {
+      if (C.isValid()) {
+        if (!C.isInitialized()) {
+          ContainsUnsetIRConstants = true;
+          this->registerError("LLVMToBackend: AdaptiveCpp S2IR constant was not set: " +
+                              C.getGlobalVariable()->getName().str());
+        }
+      }
+    });
+    if(ContainsUnsetIRConstants)
+      return false;
+
+    // Generate compilation stats
+    for(auto& KN : Kernels) {
+      KernelStats KS;
+      KS.Name = KN;
+      KS.IsFreeOfIndirectAccess = false;
+      if(auto* F = M.getFunction(KN))
+        KS.IsFreeOfIndirectAccess = KernelIsFreeOfIndirectAccess[F];
+    }
+
+    return true;
+  });
 }
 
 bool LLVMToBackendTranslator::translatePreparedIR(llvm::Module &FlavoredModule, std::string &out) {
@@ -342,6 +533,16 @@ bool LLVMToBackendTranslator::optimizeFlavoredIR(llvm::Module& M, PassHandler& P
 
   // silence optimization remarks,..
   M.getContext().setDiagnosticHandlerCallBack(
+#if LLVM_VERSION_MAJOR >= 19
+      [](const llvm::DiagnosticInfo *DI, void *Context) {
+        llvm::DiagnosticPrinterRawOStream DP(llvm::errs());
+        if (DI->getSeverity() == llvm::DS_Error) {
+          llvm::errs() << "LLVMToBackend: Error: ";
+          DI->print(DP);
+          llvm::errs() << "\n";
+        }
+      });
+#else
       [](const llvm::DiagnosticInfo &DI, void *Context) {
         llvm::DiagnosticPrinterRawOStream DP(llvm::errs());
         if (DI.getSeverity() == llvm::DS_Error) {
@@ -350,6 +551,7 @@ bool LLVMToBackendTranslator::optimizeFlavoredIR(llvm::Module& M, PassHandler& P
           llvm::errs() << "\n";
         }
       });
+#endif
 
   llvm::ModulePassManager MPM =
       PH.PassBuilder->buildPerModuleDefaultPipeline(llvm::OptimizationLevel::O3);
@@ -397,13 +599,6 @@ bool LLVMToBackendTranslator::linkBitcodeFile(llvm::Module &M, const std::string
   HIPSYCL_DEBUG_INFO << "LLVMToBackend: Linking with bitcode file: " << BitcodeFile << "\n";
   return linkBitcodeString(M, std::string{F.get()->getBuffer()}, ForcedTriple, ForcedDataLayout,
                            LinkOnlyNeeded);
-}
-
-void LLVMToBackendTranslator::setS2IRConstant(const std::string &name, const void *ValueBuffer) {
-  SpecializationApplicators[name] = [=](llvm::Module& M){
-    S2IRConstant C = S2IRConstant::getFromConstantName(M, name);
-    C.set(ValueBuffer);
-  };
 }
 
 void LLVMToBackendTranslator::specializeKernelArgument(const std::string &KernelName, int ParamIndex,
@@ -459,7 +654,7 @@ void LLVMToBackendTranslator::specializeKernelArgument(const std::string &Kernel
 
           llvm::ReturnInst::Create(M.getContext(), ReturnedValue, BB);
 
-          llvm::Instruction* InsertionPt = &(*F->getEntryBlock().getFirstInsertionPt());
+          auto InsertionPt = llvmutils::makeInsertionPoint(&(*F->getEntryBlock().getFirstInsertionPt()));
           auto* FnCall = llvm::CallInst::Create(llvm::FunctionCallee(GetConstant),
                                   llvm::ArrayRef<llvm::Value *>{}, "", InsertionPt);
           F->getArg(ParamIndex)->replaceNonMetadataUsesWith(FnCall);
@@ -472,6 +667,11 @@ void LLVMToBackendTranslator::specializeKernelArgument(const std::string &Kernel
 void LLVMToBackendTranslator::specializeFunctionCalls(
     const std::string &FuncName, const std::vector<std::string> &ReplacementCalls,
     bool OverrideOnlyUndefined) {
+
+  for(const auto& FName : ReplacementCalls) {
+    this->FunctionCallSpecializationOutliningEntrypoints.push_back(FName);
+  }
+
   std::string Id = "__specialized_function_call_"+FuncName;
   SpecializationApplicators[Id] = [=](llvm::Module &M) {
     HIPSYCL_DEBUG_INFO << "LLVMToBackend: Specializing function calls to " << FuncName << " to:\n";
@@ -541,6 +741,15 @@ void LLVMToBackendTranslator::specializeFunctionCalls(
       }
     }
   };
+}
+
+void LLVMToBackendTranslator::setNoAliasKernelParam(const std::string &KernelName, int ParamIndex) {
+  NoAliasParameters[KernelName].push_back(ParamIndex);
+}
+
+void LLVMToBackendTranslator::setNoAliasIfNoIndirectAccessKernelParam(const std::string &KernelName,
+                                                                      int ParamIndex) {
+  NoAliasIfNoIndirectAccessParameters[KernelName].push_back(ParamIndex);
 }
 
 void LLVMToBackendTranslator::provideExternalSymbolResolver(ExternalSymbolResolver Resolver) {
@@ -654,6 +863,32 @@ void LLVMToBackendTranslator::runKernelDeadArgumentElimination(
                        << "\n";
   }
 }
+
+void LLVMToBackendTranslator::setKnownPtrParamAlignment(const std::string &FunctionName,
+                                                        int ParamIndex, int Alignment) {
+  for (auto &Entry : KnownPtrParamAlignments[FunctionName]) {
+    if (Entry.first == ParamIndex) {
+      Entry.second = Alignment;
+      return;
+    }
+  }
+  KnownPtrParamAlignments[FunctionName].push_back(std::make_pair(ParamIndex, Alignment));
+}
+
+void LLVMToBackendTranslator::setReflectionField(const std::string &str, uint64_t value) {
+  ReflectionFields[str] = value;
+}
+
+std::string LLVMToBackendTranslator::getCompilationIdentifier() const {
+  std::string Result;
+  for(const auto& K : Kernels) {
+    Result += "<Kernel:"+K+">";
+  }
+  if(Result.empty())
+    return "<no-kernels>";
+  return Result;
+}
+
 }
 }
 

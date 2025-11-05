@@ -12,17 +12,16 @@
 
 #include "hipSYCL/common/debug.hpp"
 #include "hipSYCL/common/filesystem.hpp"
+#include "hipSYCL/common/dylib_loader.hpp"
 #include "hipSYCL/compiler/cbs/IRUtils.hpp"
-#include "hipSYCL/compiler/cbs/KernelFlattening.hpp"
 #include "hipSYCL/compiler/cbs/PipelineBuilder.hpp"
-#include "hipSYCL/compiler/cbs/SimplifyKernel.hpp"
 #include "hipSYCL/compiler/cbs/SplitterAnnotationAnalysis.hpp"
-#include "hipSYCL/compiler/llvm-to-backend/AddressSpaceInferencePass.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/AddressSpaceMap.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/Utils.hpp"
 #include "hipSYCL/compiler/llvm-to-backend/host/HostKernelWrapperPass.hpp"
-#include "hipSYCL/compiler/sscp/IRConstantReplacer.hpp"
-#include "hipSYCL/glue/llvm-sscp/s2_ir_constants.hpp"
+#include "hipSYCL/compiler/llvm-to-backend/host/StaticLocalMemoryPass.hpp"
+#include "hipSYCL/compiler/utils/LLVMUtils.hpp"
+#include "hipSYCL/glue/llvm-sscp/jit-reflection/queries.hpp"
 
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
@@ -55,13 +54,48 @@
 #include <system_error>
 #include <vector>
 
+#ifdef __APPLE__
+
+#include <sys/sysctl.h>
+
+namespace {
+
+std::string get_macos_version() {
+  char    buff [64] = "";
+  std::size_t buff_size = sizeof(buff);
+
+  if (sysctlbyname("kern.osproductversion", buff, &buff_size, nullptr, 0) != 0) {
+    return {};
+  }
+  return std::string{buff};
+}
+
+}
+
+#endif
+
 namespace hipsycl {
 namespace compiler {
 
+#if LLVM_VERSION_MAJOR >= 16
+#define NULLOPT std::nullopt
+#define OPTIONAL std::optional
+#else
+#define NULLOPT llvm::None
+#define OPTIONAL llvm::Optional
+#endif
+
 LLVMToHostTranslator::LLVMToHostTranslator(const std::vector<std::string> &KN)
-    : LLVMToBackendTranslator{sycl::jit::backend::host, KN, KN}, KernelNames{KN} {}
+    : LLVMToBackendTranslator{static_cast<int>(sycl::AdaptiveCpp_jit::compiler_backend::host), KN, KN},
+      KernelNames{KN} {}
 
 bool LLVMToHostTranslator::toBackendFlavor(llvm::Module &M, PassHandler &PH) {
+#ifdef _WIN32
+  // Remove /DEFAULTLIB and co.
+  if(auto LinkerOptionsMD = M.getNamedMetadata("llvm.linker.options")) {
+    LinkerOptionsMD->eraseFromParent();
+  }
+#endif
 
   for (auto KernelName : KernelNames) {
     if (auto *F = M.getFunction(KernelName)) {
@@ -76,18 +110,38 @@ bool LLVMToHostTranslator::toBackendFlavor(llvm::Module &M, PassHandler &PH) {
           ->addOperand(llvm::MDTuple::get(M.getContext(), Operands));
 
       F->setLinkage(llvm::GlobalValue::LinkageTypes::ExternalLinkage);
+      
+#ifdef _WIN32
+      // Windows exceptions..
+      F->setPersonalityFn(nullptr);
+#endif
     }
   }
+
+  // This pass needs to be run before builtins are linked,
+  // as it potentially generates additional builtin calls.
+  // So we cannot run it in the pipeline at the end of this function.
+  HostStaticLocalMemoryPass SLMPass{};
+  SLMPass.run(M, *PH.ModuleAnalysisManager);
 
   std::string BuiltinBitcodeFileName = "libkernel-sscp-host-full.bc";
   if(IsFastMath)
     BuiltinBitcodeFileName = "libkernel-sscp-host-fast-full.bc";
   std::string BuiltinBitcodeFile =
-      common::filesystem::join_path(common::filesystem::get_install_directory(),
-                                    {"lib", "hipSYCL", "bitcode", BuiltinBitcodeFileName});
+      common::filesystem::join_path(getBitcodePath(), BuiltinBitcodeFileName);
 
   if (!this->linkBitcodeFile(M, BuiltinBitcodeFile))
     return false;
+
+  // Internalize all constant global variables that don't their definition
+  // to be imported from external sources - this is fine because llvm-to-backend
+  // lowering always happens *after* linking in all dependencies, and therefore
+  // no symbols need to be exported to other TUs, ever.
+  for(auto& GV : M.globals()) {
+    if (GV.isConstant() && GV.hasInitializer() &&
+        !llvmutils::starts_with(GV.getName(), "__acpp_cbs"))
+      GV.setLinkage(llvm::GlobalValue::LinkageTypes::InternalLinkage);
+  }
 
   llvm::ModulePassManager MPM;
   PH.ModuleAnalysisManager->clear(); // for some reason we need to reset the analyses... otherwise
@@ -97,79 +151,200 @@ bool LLVMToHostTranslator::toBackendFlavor(llvm::Module &M, PassHandler &PH) {
     MAM.registerPass([] { return SplitterAnnotationAnalysis{}; });
   });
   PH.PassBuilder->registerModuleAnalyses(*PH.ModuleAnalysisManager);
+
   registerCBSPipeline(MPM, hipsycl::compiler::OptLevel::O3, true);
+  HIPSYCL_DEBUG_INFO << "LLVMToHostTranslator: Done registering\n";
 
   llvm::FunctionPassManager FPM;
-  FPM.addPass(HostKernelWrapperPass{KnownLocalMemSize});
+  FPM.addPass(HostKernelWrapperPass{KnownLocalMemSize, KnownGroupSizeX, KnownGroupSizeY, KnownGroupSizeZ});
   MPM.addPass(llvm::createModuleToFunctionPassAdaptor(std::move(FPM)));
 
   MPM.run(M, *PH.ModuleAnalysisManager);
-
+  HIPSYCL_DEBUG_INFO << "LLVMToHostTranslator: Done toBackendFlavor\n";
   return true;
 }
 
 bool LLVMToHostTranslator::translateToBackendFormat(llvm::Module &FlavoredModule,
                                                     std::string &out) {
-  auto InputFile = llvm::sys::fs::TempFile::create("acpp-sscp-host-%%%%%%.bc");
-  auto OutputFile = llvm::sys::fs::TempFile::create("acpp-sscp-host-%%%%%%.so");
 
-  if (auto E = InputFile.takeError()) {
-    this->registerError("LLVMToHost: Could not create temp file: " + InputFile->TmpName);
+  llvm::SmallVector<char> InputFile;
+  int InputFD;
+  // don't use fs::TempFile, as we can't unlock the file for the clang invocation later... (Windows)
+  if(auto E = llvm::sys::fs::createTemporaryFile("acpp-sscp-host", "bc", InputFD, InputFile, llvm::sys::fs::OF_None)){
+    this->registerError("LLVMToHost: Could not create temp input file" + E.message());
     return false;
   }
+  llvm::StringRef InputFileName = InputFile.data();
 
-  if (auto E = OutputFile.takeError()) {
-    this->registerError("LLVMToHost: Could not create temp file: " + OutputFile->TmpName);
+  AtScopeExit RemoveInputFile([&](){auto Err = llvm::sys::fs::remove(InputFileName);});
+
+  llvm::SmallVector<char> OptOutputFile;
+  if(auto E = llvm::sys::fs::createTemporaryFile("acpp-sscp-host-opt", "bc", OptOutputFile, llvm::sys::fs::OF_None)){
+    this->registerError("LLVMToHost: Could not create temp file" + E.message());
     return false;
   }
+  llvm::StringRef OptOutputFileName = OptOutputFile.data();
+  AtScopeExit RemoveOptOutputFile([&](){auto Err = llvm::sys::fs::remove(OptOutputFileName);});
 
-  std::string OutputFilename = OutputFile->TmpName;
+  llvm::SmallVector<char> LlcOutputFile;
+#ifndef _WIN32
+  std::string ObjectFileEnding = "o";
+#else
+  std::string ObjectFileEnding = "obj";
+#endif
+  if(auto E = llvm::sys::fs::createTemporaryFile("acpp-sscp-host-llc", ObjectFileEnding, LlcOutputFile, llvm::sys::fs::OF_None)){
+    this->registerError("LLVMToHost: Could not create temp file" + E.message());
+    return false;
+  }
+  llvm::StringRef LlcOutputFileName = LlcOutputFile.data();
+  AtScopeExit RemoveLlcOutputFile([&](){auto Err = llvm::sys::fs::remove(LlcOutputFileName);});
 
-  AtScopeExit DestroyInputFile([&]() {
-    if (InputFile->discard())
-      ;
-  });
-  AtScopeExit DestroyOutputFile([&]() {
-    if (OutputFile->discard())
-      ;
-  });
+  llvm::SmallVector<char> OutputFile;
+  if(auto E = llvm::sys::fs::createTemporaryFile("acpp-sscp-host", ACPP_SHARED_LIBRARY_EXTENSION, OutputFile, llvm::sys::fs::OF_None)){
+    this->registerError("LLVMToHost: Could not create temp input file" + E.message());
+    return false;
+  }
+  llvm::StringRef OutputFileName = OutputFile.data();
+  AtScopeExit RemoveOutputFile([&](){auto Err = llvm::sys::fs::remove(OutputFileName);});
 
-  std::error_code EC;
-  llvm::raw_fd_ostream InputStream{InputFile->FD, false};
+  {
+    llvm::raw_fd_ostream InputStream{InputFD, true};
 
-  llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
-  InputStream.flush();
+    llvm::WriteBitcodeToFile(FlavoredModule, InputStream);
+    
+    if(InputStream.error()) {HIPSYCL_DEBUG_ERROR << "Error while writing" << InputStream.error().message() << '\n'; }
+    InputStream.flush();
+    if(InputStream.error()) {HIPSYCL_DEBUG_ERROR << "Error while flushing" << InputStream.error().message() << '\n'; }
+  }
 
-  const std::string ClangPath = HIPSYCL_CLANG_PATH;
-  const std::string CpuFlag = HIPSYCL_HOST_CPU_FLAG;
+  const std::string OptPath = getOptPath();
+  const std::string LLCPath = getLLCPath();
+  const std::string LLDPath = getLLDPath();
 
-  llvm::SmallVector<llvm::StringRef, 16> Invocation{ClangPath,
+  const std::string LlcCpuFlag = ACPP_LLC_HOST_CPU_FLAG;
+  const std::string OptCpuFlag = ACPP_OPT_HOST_CPU_FLAG;
+
+
+  llvm::SmallVector<llvm::StringRef, 16> OptInvocation{OptPath,
                                                     "-O3",
-                                                    CpuFlag,
-                                                    "-x",
-                                                    "ir",
-                                                    "-shared",
-                                                    "-Wno-pass-failed",
-                                                    "-fPIC",
                                                     "-o",
-                                                    OutputFilename,
-                                                    InputFile->TmpName};
+                                                    OptOutputFileName,
+                                                    InputFileName,
+                                                    };
 
-  std::string ArgString;
-  for (const auto &S : Invocation) {
-    ArgString += S;
-    ArgString += " ";
+  if(!OptCpuFlag.empty())
+    OptInvocation.push_back(OptCpuFlag);
+
+  llvm::SmallVector<llvm::StringRef, 16> LlcInvocation{LLCPath,
+                                                    "-O3",
+                                                    "-filetype=obj",
+                                                    #ifndef _WIN32
+                                                    "--relocation-model=pic",
+                                                    #endif
+                                                    "-o",
+                                                    LlcOutputFileName,
+                                                    OptOutputFileName,
+                                                    };
+
+  if(!LlcCpuFlag.empty())
+    LlcInvocation.push_back(LlcCpuFlag);
+
+  if(IsFastMath) {
+    LlcInvocation.push_back("--enable-unsafe-fp-math");
+    LlcInvocation.push_back("--enable-no-infs-fp-math");
+    LlcInvocation.push_back("--enable-no-nans-fp-math");
+    LlcInvocation.push_back("--enable-no-signed-zeros-fp-math");
+    LlcInvocation.push_back("--enable-no-trapping-fp-math");
   }
-  HIPSYCL_DEBUG_INFO << "LLVMToHost: Invoking " << ArgString << "\n";
 
-  int R = llvm::sys::ExecuteAndWait(ClangPath, Invocation);
+
+#ifdef __APPLE__
+  std::string os_version = get_macos_version();
+  llvm::SmallVector<llvm::StringRef, 16> LldInvocation{LLDPath,
+                                                    "-dynamic",
+                                                    "-dylib",
+                                                    "-undefined", "dynamic_lookup",
+#ifdef __arm64__
+                                                    "-arch","arm64",
+#else
+                                                    "-arch", "x86_64",
+#endif                                              // TODO Figure out platform version programmatically
+                                                    "-platform_version","macos", os_version, os_version,
+                                                    "-mllvm", "-enable-linkonceodr-outlining",
+                                                    "-o",
+                                                    OutputFileName,
+                                                    LlcOutputFileName,
+                                                    };
+#elif defined(_WIN32)
+  std::string LldOutputFlag = "/out:"+OutputFileName.str();
+  llvm::SmallVector<llvm::StringRef, 16> LldInvocation{LLDPath,
+                                                    "/dll",
+                                                    "/noimplib",
+                                                    "/defaultlib:libcmt",
+                                                    "/defaultlib:oldnames",
+                                                    LldOutputFlag,
+                                                    LlcOutputFileName
+                                                    };
+#else
+  llvm::SmallVector<llvm::StringRef, 16> LldInvocation{LLDPath,
+                                                    "-shared",
+                                                    "-o",
+                                                    OutputFileName,
+                                                    LlcOutputFileName,
+                                                    };
+#endif
+  const llvm::StringRef AdditionalLlcFlags = ACPP_LLC_ADDITIONAL_FLAGS;
+  const llvm::StringRef AdditionalOptFlags = ACPP_OPT_ADDITIONAL_FLAGS;
+  AdditionalLlcFlags.split(LlcInvocation, ' ', -1, false);
+  AdditionalOptFlags.split(OptInvocation, ' ', -1, false);
+
+  auto getInvocationAsString = [](const auto& I) {
+    std::string S;
+    for(const auto& Arg : I) {
+      S += Arg;
+      S += " ";
+    }
+    return S;
+  };
+
+
+  llvm::SmallVector<OPTIONAL<llvm::StringRef>> Redirects;
+  if(hipsycl::common::output_stream::get().get_debug_level() < 3) {
+    // This suppresses vectorization failure warnings, which are unavoidable
+    // for some code patterns. Unfortunately, --no-warn and similar seem to be
+    // insufficient.
+    // When an empty redirect is used, then LLVM redirects output to /dev/null
+    // (or similar)
+    static const char EmptyRedirect [] = "";
+
+    for(int i = 0; i < 3; ++i)
+      Redirects.push_back(llvm::StringRef{EmptyRedirect});
+  }
+
+  HIPSYCL_DEBUG_INFO << "LLVMToHost: Invoking " << getInvocationAsString(OptInvocation) << "\n";
+  int R = llvm::sys::ExecuteAndWait(OptPath, OptInvocation, NULLOPT, Redirects);
 
   if (R != 0) {
-    this->registerError("LLVMToHost: clang invocation failed with exit code " + std::to_string(R));
+    this->registerError("LLVMToHost: opt invocation failed with exit code " + std::to_string(R));
     return false;
   }
 
-  auto ReadResult = llvm::MemoryBuffer::getFile(OutputFile->TmpName, -1);
+  HIPSYCL_DEBUG_INFO << "LLVMToHost: Invoking " << getInvocationAsString(LlcInvocation) << "\n";
+  R = llvm::sys::ExecuteAndWait(LLCPath, LlcInvocation, NULLOPT, Redirects);
+
+  if (R != 0) {
+    this->registerError("LLVMToHost: llc invocation failed with exit code " + std::to_string(R));
+    return false;
+  }
+
+  R = llvm::sys::ExecuteAndWait(LLDPath, LldInvocation, NULLOPT, Redirects);
+
+  if (R != 0) {
+    this->registerError("LLVMToHost: lld invocation failed with exit code " + std::to_string(R));
+    return false;
+  }
+
+  auto ReadResult = llvm::MemoryBuffer::getFile(OutputFileName);
 
   if (auto Err = ReadResult.getError()) {
     this->registerError("LLVMToHost: Could not read result file" + Err.message());
@@ -207,13 +382,13 @@ AddressSpaceMap LLVMToHostTranslator::getAddressSpaceMap() const {
   return ASMap;
 }
 
-std::unique_ptr<LLVMToBackendTranslator>
+ACPP_BACKEND_API_EXPORT std::unique_ptr<LLVMToBackendTranslator>
 createLLVMToHostTranslator(const std::vector<std::string> &KernelNames) {
   return std::make_unique<LLVMToHostTranslator>(KernelNames);
 }
 
 void LLVMToHostTranslator::migrateKernelProperties(llvm::Function *From, llvm::Function *To) {
-  assert(false && "migrateKernelProperties is unsupport for LLVMToHost");
+  assert(false && "migrateKernelProperties is unsupported for LLVMToHost");
 }
 
 } // namespace compiler

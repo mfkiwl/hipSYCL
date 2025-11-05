@@ -20,6 +20,8 @@ namespace compiler {
 
 class EntrypointPreparationPass : public llvm::PassInfoMixin<EntrypointPreparationPass> {
 public:
+  EntrypointPreparationPass(bool ExportByDefault = false);
+
   llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &AM);
 
   const std::vector<std::string>& getKernelNames() const {
@@ -38,6 +40,7 @@ private:
   std::vector<std::string> KernelNames;
   std::vector<std::string> OutliningEntrypoints;
   std::vector<std::string> NonKernelOutliningEntrypoints;
+  bool ExportAll;
 };
 
 //  Removes all code not belonging to kernels
@@ -51,10 +54,17 @@ private:
   std::vector<std::string> OutliningEntrypoints;
 };
 
-//  Removes all code not belonging to kernels
+// Canonicalizes kernel argument conventions. In particlar, for all aggregates
+// passed by value, attaches ByVal attribute with the value type. With opaque
+// pointers, this requires type-scavenging.
+//
+// For free kernels, this is currently only supported for kernels with at least
+// one callsite in the TU.
 class KernelArgumentCanonicalizationPass
     : public llvm::PassInfoMixin<KernelArgumentCanonicalizationPass> {
 public:
+  static llvm::SmallVector<bool> areFreeKernelFunctionParamsByValue(llvm::Function *FreeKernel);
+
   KernelArgumentCanonicalizationPass(const std::vector<std::string>& KernelNames);
 
   llvm::PreservedAnalyses run(llvm::Module &M, llvm::ModuleAnalysisManager &AM);

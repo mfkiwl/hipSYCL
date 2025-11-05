@@ -12,6 +12,7 @@
 #define HIPSYCL_HIP_ALLOCATOR_HPP
 
 #include "../allocator.hpp"
+#include "../hints.hpp"
 
 namespace hipsycl {
 namespace rt {
@@ -21,20 +22,25 @@ class hip_allocator : public backend_allocator
 public:
   hip_allocator(backend_descriptor desc, int hip_device);
 
-  virtual void* allocate(size_t min_alignment, size_t size_bytes) override;
+  virtual void* raw_allocate(size_t min_alignment, size_t size_bytes,
+                             const allocation_hints &hints = {}) override;
 
-  virtual void *allocate_optimized_host(size_t min_alignment,
-                                        size_t bytes) override;
+  virtual void *
+  raw_allocate_optimized_host(size_t min_alignment, size_t bytes,
+                              const allocation_hints &hints = {}) override;
   
-  virtual void free(void *mem) override;
+  virtual void raw_free(void *mem) override;
 
-  virtual void *allocate_usm(size_t bytes) override;
+  virtual void *raw_allocate_usm(size_t bytes,
+                                 const allocation_hints &hints = {}) override;
   virtual bool is_usm_accessible_from(backend_descriptor b) const override;
 
   virtual result query_pointer(const void* ptr, pointer_info& out) const override;
 
   virtual result mem_advise(const void *addr, std::size_t num_bytes,
                             int advise) const override;
+
+  virtual device_id get_device() const override;
 private:
   backend_descriptor _backend_descriptor;
   int _dev;

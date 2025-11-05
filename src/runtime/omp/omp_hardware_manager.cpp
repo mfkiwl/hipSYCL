@@ -14,6 +14,7 @@
 #include "hipSYCL/runtime/omp/omp_hardware_manager.hpp"
 #include "hipSYCL/runtime/error.hpp"
 #include "hipSYCL/runtime/device_id.hpp"
+#include "hipSYCL/runtime/omp/omp_phys_mem.hpp"
 
 namespace hipsycl {
 namespace rt {
@@ -37,11 +38,11 @@ std::size_t omp_hardware_context::get_max_memcpy_concurrency() const {
 }
 
 std::string omp_hardware_context::get_device_name() const {
-  return "hipSYCL OpenMP host device";
+  return "AdaptiveCpp OpenMP host device";
 }
 
 std::string omp_hardware_context::get_vendor_name() const {
-  return "the hipSYCL project";
+  return "the AdaptiveCpp project";
 }
 
 std::string omp_hardware_context::get_device_arch() const {
@@ -120,9 +121,32 @@ bool omp_hardware_context::has(device_support_aspect aspect) const {
 
 std::size_t
 omp_hardware_context::get_property(device_uint_property prop) const {
+
+  auto phys_mem_or_max = []() {
+    if (auto mem = get_physical_memory()) {
+      return *mem;
+    } else {
+      return std::numeric_limits<std::size_t>::max();
+    }
+  };
+
   switch (prop) {
   case device_uint_property::max_compute_units:
+    // Do not change this; heuristics in algorithms library
+    // use this.
     return omp_get_num_procs();
+    break;
+    case device_uint_property::max_work_group_range0:
+    return std::numeric_limits<std::size_t>::max();
+    break;
+  case device_uint_property::max_work_group_range1:
+    return std::numeric_limits<std::size_t>::max();
+    break;
+  case device_uint_property::max_work_group_range2:
+    return std::numeric_limits<std::size_t>::max();
+    break;
+  case device_uint_property::max_work_group_range_size:
+    return std::numeric_limits<std::size_t>::max();
     break;
   case device_uint_property::max_global_size0:
     return std::numeric_limits<std::size_t>::max();
@@ -245,7 +269,7 @@ omp_hardware_context::get_property(device_uint_property prop) const {
     return 1; // TODO
     break;
   case device_uint_property::global_mem_size:
-    return std::numeric_limits<std::size_t>::max(); // TODO
+    return phys_mem_or_max();
     break;
   case device_uint_property::max_constant_buffer_size:
     return std::numeric_limits<std::size_t>::max();
@@ -264,6 +288,17 @@ omp_hardware_context::get_property(device_uint_property prop) const {
     break;
   case device_uint_property::vendor_id:
     return std::numeric_limits<std::size_t>::max();
+    break;
+  case device_uint_property::architecture:
+    // TODO
+    return 0;
+    break;
+  case device_uint_property::backend_id:
+    return static_cast<int>(backend_id::omp);
+    break;
+  case device_uint_property::queue_priority_range_low:
+  case device_uint_property::queue_priority_range_high:
+    return 0;
     break;
   }
   assert(false && "Invalid device property");
@@ -286,6 +321,16 @@ std::string omp_hardware_context::get_driver_version() const { return "1.2"; }
 std::string omp_hardware_context::get_profile() const {
   return "FULL_PROFILE";
 }
+
+std::size_t omp_hardware_context::get_platform_index() const {
+  return 0;
+}
+
+std::size_t omp_hardware_manager::get_num_platforms() const {
+  return 1;
+}
+
+
 
 std::size_t omp_hardware_manager::get_num_devices() const { return 1; }
 

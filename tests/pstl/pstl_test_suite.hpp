@@ -15,11 +15,15 @@
 
 struct enable_unified_shared_memory {
   enable_unified_shared_memory() {
+#ifndef __ACPP_STDPAR_ASSUME_SYSTEM_USM__
     hipsycl::stdpar::unified_shared_memory::pop_disabled();
+#endif
   }
 
   ~enable_unified_shared_memory() {
+#ifndef __ACPP_STDPAR_ASSUME_SYSTEM_USM__
     hipsycl::stdpar::unified_shared_memory::push_disabled();
+#endif
   }
 };
 
@@ -48,6 +52,47 @@ struct non_trivial_copy {
   }
 
   friend bool operator!=(const non_trivial_copy &a, const non_trivial_copy &b) {
+    return a.x != b.x;
+  }
+
+  int x;
+};
+
+
+static thread_local int move_counter = 0;
+struct non_trivial_move {
+
+  non_trivial_move(){}
+
+  non_trivial_move(int val)
+  : x{val} {}
+
+  non_trivial_move(const non_trivial_move& other)
+  : x{other.x} {}
+
+  non_trivial_move& operator=(const non_trivial_move& other) {
+    x = other.x;
+    return *this;
+  }
+
+  non_trivial_move(non_trivial_move&& other) {
+    x = std::move(other.x);
+    __acpp_if_target_host(++move_counter;)
+  }
+
+  non_trivial_move& operator=(non_trivial_move&& other) {
+    if (this != &other) {
+      x = std::move(other.x);
+      __acpp_if_target_host(++move_counter;)
+    }
+    return *this;
+  }  
+
+  friend bool operator==(const non_trivial_move &a, const non_trivial_move &b) {
+    return a.x == b.x;
+  }
+
+  friend bool operator!=(const non_trivial_move &a, const non_trivial_move &b) {
     return a.x != b.x;
   }
 

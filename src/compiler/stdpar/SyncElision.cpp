@@ -10,7 +10,7 @@
 // SPDX-License-Identifier: BSD-2-Clause
 #include "hipSYCL/compiler/stdpar/SyncElision.hpp"
 #include "hipSYCL/compiler/cbs/IRUtils.hpp"
-
+#include "hipSYCL/compiler/utils/LLVMUtils.hpp"
 
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/IR/BasicBlock.h>
@@ -79,11 +79,14 @@ void identifyStoresPotentiallyForStdparArgHandling(
                   return true;
                 }
               } else if (auto *CB = llvm::dyn_cast<llvm::CallBase>(Current)) {
-                if (StdparFunctions.contains(CB->getCalledFunction())) {
-                  Users.push_back(Current);
-                  return true;
-                } else if(CB->getCalledFunction()->getName().startswith("llvm.lifetime")) {
-                  return true;
+                auto* Callee = CB->getCalledFunction();
+                if(Callee) {
+                  if (StdparFunctions.contains(Callee)) {
+                    Users.push_back(Current);
+                    return true;
+                  } else if (llvmutils::starts_with(Callee->getName(), "llvm.lifetime")) {
+                    return true;
+                  }
                 }
               }
 
@@ -130,11 +133,26 @@ bool instructionAccessesMemory(llvm::Instruction* I) {
   return false;
 }
 
+bool isStackPtr(const llvm::Value* V) {
+  if(!V)
+    return false;
+  
+  if(llvm::isa<llvm::AllocaInst>(V)) {
+    return true;
+  } else {
+    if(auto* GEPInst = llvm::dyn_cast<llvm::GetElementPtrInst>(V)) {
+      return isStackPtr(GEPInst->getPointerOperand());
+    }
+
+    return false;
+  }
+}
+
 bool functionDoesNotAccessMemory(llvm::Function* F){
   if(!F)
     return true;
   if(F->isIntrinsic()) {
-    if(F->getName().startswith("llvm.lifetime")){
+    if(llvmutils::starts_with(F->getName(), "llvm.lifetime")){
       return true;
     }
   }
@@ -184,6 +202,7 @@ void forEachReachableInstructionRequiringSync(
     llvm::Instruction *Start, const llvm::SmallPtrSet<llvm::Function *, 16> &StdparFunctions,
     const InstToInstListMapT& PotentialStoresForStdparArgs,
     llvm::SmallPtrSet<llvm::BasicBlock*, 16> &CompletelyVisitedBlocks,
+    bool NoStackPtrsInStdparAlgorithms,
     Handler &&H) {
 
   if(!Start)
@@ -202,7 +221,7 @@ void forEachReachableInstructionRequiringSync(
   while(Current) {
     if(auto* CB = llvm::dyn_cast<llvm::CallBase>(Current)) {
       llvm::Function* CalledF = CB->getCalledFunction();
-      if(CalledF->getName().equals(BarrierBuiltinName)) {
+      if(CalledF->getName() == BarrierBuiltinName) {
         // basic block already contains barrier; nothing to do
         return;
       }
@@ -221,8 +240,12 @@ void forEachReachableInstructionRequiringSync(
         return;
       }
     } else if(instructionAccessesMemory(Current)) {
-      bool isSkippableStore = false;
-      if(llvm::isa<llvm::StoreInst>(Current)) {
+      bool isSkippableInst = false;
+      if(auto* SI = llvm::dyn_cast<llvm::StoreInst>(Current)) {
+        if(NoStackPtrsInStdparAlgorithms) {
+          if(isStackPtr(SI->getPointerOperand()))
+            isSkippableInst = true;
+        }
         // Check if the store is perhaps only used to setup arguments of stdpar calls
         // (e.g. to assemble kernel lambdas)
         auto It = PotentialStoresForStdparArgs.find(Current);
@@ -238,17 +261,22 @@ void forEachReachableInstructionRequiringSync(
             }
           }
           if(allAreSucceedingInBB(Current, StdparCallsUsingMemory)) {
-            isSkippableStore = true;
+            isSkippableInst = true;
           }
+        }
+      } else if(auto* LI = llvm::dyn_cast<llvm::LoadInst>(Current)) {
+        if(NoStackPtrsInStdparAlgorithms) {
+          if(isStackPtr(LI->getPointerOperand()))
+            isSkippableInst = true;
         }
       }
 
-      if(!isSkippableStore) {
+      if(!isSkippableInst) {
         H(Current);
         return;
       } else {
         HIPSYCL_DEBUG_INFO
-            << "[stdpar] SyncElision: Detected store that does not block barrier movement\n";
+            << "[stdpar] SyncElision: Detected load or store that does not block barrier movement\n";
       }
     } else if(Current->isTerminator()){
       // If this terminator causes control flow to exit from this function, we need
@@ -270,7 +298,8 @@ void forEachReachableInstructionRequiringSync(
     if(Successor->size() > 0) {
       llvm::Instruction* FirstI = &(*Successor->getFirstInsertionPt());
       forEachReachableInstructionRequiringSync(
-          FirstI, StdparFunctions, PotentialStoresForStdparArgs, CompletelyVisitedBlocks, H);
+          FirstI, StdparFunctions, PotentialStoresForStdparArgs, CompletelyVisitedBlocks,
+          NoStackPtrsInStdparAlgorithms, H);
     }
   }
 }
@@ -362,7 +391,7 @@ llvm::PreservedAnalyses SyncElisionPass::run(llvm::Module &M, llvm::ModuleAnalys
     for(auto* I : StdparCallPositions) {
       // For the start of our search, we need be move to the next instruction following
       // the stdpar call.
-      // If the stdpar call is mapped to an InvokeInst (which is tpyically the case),
+      // If the stdpar call is mapped to an InvokeInst (which is typically the case),
       // it does not have a next instruction.
       //
       // It is important to have this logic here, and not e.g. when collecting StdparCallPositions,
@@ -381,10 +410,11 @@ llvm::PreservedAnalyses SyncElisionPass::run(llvm::Module &M, llvm::ModuleAnalys
         llvm::SmallPtrSet<llvm::BasicBlock*, 16> VisitedBlocks;
         forEachReachableInstructionRequiringSync(
             Start, StdparFunctions, InstructionsPotentiallyForStdparArgHandling, VisitedBlocks,
+            NoStackPtrsInStdparAlgorithms,
             [&](llvm::Instruction *InsertSyncBefore) {
               HIPSYCL_DEBUG_INFO << "[stdpar] SyncElision: Inserting synchronization in function "
                                 << InsertSyncBefore->getParent()->getParent()->getName() << "\n";
-              llvm::CallInst::Create(SyncF->getFunctionType(), SyncF, "", InsertSyncBefore);
+              llvm::CallInst::Create(SyncF->getFunctionType(), SyncF, "", llvmutils::makeInsertionPoint(InsertSyncBefore));
             });
       }
     }

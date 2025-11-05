@@ -11,6 +11,7 @@
 #include "hipSYCL/compiler/cbs/IRUtils.hpp"
 
 #include "hipSYCL/compiler/cbs/SplitterAnnotationAnalysis.hpp"
+#include "hipSYCL/compiler/utils/LLVMUtils.hpp"
 
 #include <llvm/Analysis/LoopInfo.h>
 #include <llvm/Analysis/RegionInfo.h>
@@ -26,6 +27,25 @@
 
 namespace hipsycl::compiler::utils {
 using namespace hipsycl::compiler::cbs;
+
+void replaceUsesOfGVWith(llvm::Function &F, llvm::StringRef GlobalVarName, llvm::Value *To, llvm::StringRef LogPrefix) {
+  auto M = F.getParent();
+  auto GV = M->getGlobalVariable(GlobalVarName);
+  if (!GV)
+    return;
+
+  HIPSYCL_DEBUG_INFO << LogPrefix << "RUOGVW: " << *GV << " with " << *To << "\n";
+  llvm::SmallVector<llvm::Instruction *> ToErase;
+  for (auto U : GV->users()) {
+    if (auto I = llvm::dyn_cast<llvm::LoadInst>(U); I && I->getFunction() == &F) {
+      HIPSYCL_DEBUG_INFO << LogPrefix << "RUOGVW: " << *I << " with " << *To << "\n";
+      I->replaceAllUsesWith(To);
+      ToErase.push_back(I);
+    }
+  }
+  for (auto I : ToErase)
+    I->eraseFromParent();
+}
 
 llvm::Loop *updateDtAndLi(llvm::LoopInfo &LI, llvm::DominatorTree &DT, const llvm::BasicBlock *B,
                           llvm::Function &F) {
@@ -101,7 +121,7 @@ llvm::CallInst *createBarrier(llvm::Instruction *InsertBefore, SplitterAnnotatio
   F->setLinkage(llvm::GlobalValue::LinkOnceAnyLinkage);
   SAA.addSplitter(F);
 
-  return llvm::CallInst::Create(F, "", InsertBefore);
+  return llvm::CallInst::Create(F, "", llvmutils::makeInsertionPoint(InsertBefore));
 }
 
 bool checkedInlineFunction(llvm::CallBase *CI, llvm::StringRef PassPrefix, int NoInlineDebugLevel) {

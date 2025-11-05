@@ -57,6 +57,8 @@ public:
 
   virtual ~ocl_hardware_context();
 
+  virtual std::size_t get_platform_index() const override;
+
   ocl_allocator* get_allocator();
   ocl_usm* get_usm_provider();
 
@@ -66,6 +68,7 @@ public:
   cl::Context get_cl_context() const;
 
   bool has_intel_extension_profile() const;
+  bool has_cl_khr_priority_hints_extension() const;
 
   void init_allocator(ocl_hardware_manager* mgr);
 private:
@@ -76,6 +79,7 @@ private:
   std::shared_ptr<ocl_usm> _usm_provider;
   ocl_allocator _alloc;
   bool _has_intel_extension_profile;
+  bool _has_cl_khr_priority_hints_extension;
 };
 
 class ocl_hardware_manager : public backend_hardware_manager
@@ -86,6 +90,7 @@ public:
   virtual std::size_t get_num_devices() const override;
   virtual hardware_context *get_device(std::size_t index) override;
   virtual device_id get_device_id(std::size_t index) const override;
+  virtual std::size_t get_num_platforms() const override;
 
   virtual ~ocl_hardware_manager() {}
   

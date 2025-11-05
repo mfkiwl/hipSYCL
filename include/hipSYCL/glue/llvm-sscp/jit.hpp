@@ -21,11 +21,13 @@
 #include "hipSYCL/runtime/kernel_cache.hpp"
 #include "hipSYCL/runtime/kernel_configuration.hpp"
 #include "hipSYCL/runtime/application.hpp"
+#include "jit-reflection/reflection_map.hpp"
 #include <cstddef>
 #include <vector>
 #include <atomic>
 #include <fstream>
 #include <string>
+#include <algorithm>
 
 namespace hipsycl {
 namespace glue {
@@ -230,28 +232,51 @@ inline rt::result compile(compiler::LLVMToBackendTranslator *translator,
                           const std::string &source,
                           const rt::kernel_configuration &config,
                           const symbol_list_t& imported_symbol_names,
+                          const reflection_map& refl_map,
                           std::string &output) {
 
   assert(translator);
   runtime_linker configure_linker {translator, imported_symbol_names};
 
   // Apply configuration
-  translator->setS2IRConstant<sycl::jit::current_backend, int>(
-      translator->getBackendId());
-  for(const auto& entry : config.s2_ir_entries()) {
-    translator->setS2IRConstant(entry.get_name(), entry.get_data_buffer());
-  }
   if(translator->getKernels().size() == 1) {
     // Currently we only can specialize kernel arguments for the 
     // single-kernel code object model
+    HIPSYCL_DEBUG_INFO << "jit: Configuring kernel "
+                       << translator->getKernels()[0] << std::endl;
     for(const auto& entry : config.specialized_arguments()) {
+      HIPSYCL_DEBUG_INFO << "jit: Specializing argument " << entry.first
+                         << " = " << entry.second << std::endl;
       translator->specializeKernelArgument(translator->getKernels().front(),
                                           entry.first, &entry.second);
+    }
+
+    int num_param_indices = static_cast<int>(config.get_num_kernel_param_indices());
+    for (int i = 0; i < num_param_indices; ++i) {
+      if (config.has_kernel_param_flag(i, rt::kernel_param_flag::noalias)) {
+        HIPSYCL_DEBUG_INFO << "jit: Setting argument " << i << " to noalias"
+                           << std::endl;
+        translator->setNoAliasKernelParam(translator->getKernels().front(), i);
+      }
+      if(config.has_kernel_param_flag(i, rt::kernel_param_flag::noalias_if_no_indirect_access)) {
+        HIPSYCL_DEBUG_INFO << "jit: Setting argument " << i
+                           << " to noalias-if-no-indirect-access " << std::endl;
+        translator->setNoAliasIfNoIndirectAccessKernelParam(
+            translator->getKernels().front(), i);
+      }
+    }
+    for(const auto& entry : config.known_alignments()) {
+      HIPSYCL_DEBUG_INFO << "jit: Setting argument " << entry.first
+                         << " to alignment " << entry.second << std::endl;
+      translator->setKnownPtrParamAlignment(translator->getKernels().front(),
+                                            entry.first, entry.second);
     }
   }
   for(const auto& entry : config.function_call_specialization_config()) {
     auto& config = entry.value->function_call_map;
     for(const auto& call_specialization : config) {
+      HIPSYCL_DEBUG_INFO << "jit: Specializing function call to "
+                         << call_specialization.first << std::endl;
       translator->specializeFunctionCalls(call_specialization.first,
                                           call_specialization.second, false);
     }
@@ -269,6 +294,11 @@ inline rt::result compile(compiler::LLVMToBackendTranslator *translator,
 
   for(const auto& flag : config.build_flags()) {
     translator->setBuildFlag(rt::to_string(flag));
+  }
+
+  // Set up JIT-time reflection for the code we compile
+  for(const auto& KV : refl_map) {
+    translator->setReflectionField(KV.first, KV.second);
   }
 
   // Transform code
@@ -307,6 +337,7 @@ inline rt::result compile(compiler::LLVMToBackendTranslator* translator,
                           const common::hcf_container* hcf,
                           const std::string& image_name,
                           const rt::kernel_configuration &config,
+                          const reflection_map& refl_map,
                           std::string &output) {
   assert(hcf);
   assert(hcf->root_node());
@@ -346,13 +377,15 @@ inline rt::result compile(compiler::LLVMToBackendTranslator* translator,
   symbol_list_t imported_symbol_names =
       target_image_node->get_as_list("imported-symbols");
 
-  return compile(translator, source, config, imported_symbol_names, output);
+  return compile(translator, source, config, imported_symbol_names, refl_map,
+                 output);
 }
 
 inline rt::result compile(compiler::LLVMToBackendTranslator* translator,
                           rt::hcf_object_id hcf_object,
                           const std::string& image_name,
                           const rt::kernel_configuration &config,
+                          const reflection_map& refl_map,
                           std::string &output) {
   const common::hcf_container* hcf = rt::hcf_cache::get().get_hcf(hcf_object);
   if(!hcf) {
@@ -362,50 +395,64 @@ inline rt::result compile(compiler::LLVMToBackendTranslator* translator,
   }
 
   return compile(translator, hcf, image_name, config,
-                 output);
+                 refl_map, output);
 }
 
-namespace dead_argument_elimination {
-// Compiles with dead-argument-elimination for the kernels, and saves
-// the retained argument mask in the appdb. This only works for single-kernel
-// compilations!
-inline rt::result compile_kernel(
+// Compiles kernels and stores information (e.g. dead-arg-elimination mask) in appdb.
+// Dead-arg-elimination is only supported if a single kernel is compiled.
+inline rt::result compile_and_store_stats(
     compiler::LLVMToBackendTranslator *translator, rt::hcf_object_id hcf_object,
     const std::string &image_name, const rt::kernel_configuration &config,
-    rt::kernel_configuration::id_type binary_id, std::string &output) {
-
-  assert(translator->getKernels().size() == 1);
+    rt::kernel_configuration::id_type binary_id, const reflection_map &refl_map,
+    std::string &output, bool enable_dead_arg_elimination = true) {
 
   rt::result err = rt::make_success();
 
   common::filesystem::persistent_storage::get()
       .get_this_app_db()
       .read_write_access([&](common::db::appdb_data &appdb) {
+        auto& binary_appdb_entry = appdb.kernels[binary_id];
         std::vector<int> *retained_args =
-            &(appdb.kernels[binary_id].retained_argument_indices);
+            &(binary_appdb_entry.retained_argument_indices);
 
-        translator->enableDeadArgumentElminiation(translator->getKernels()[0],
-                                                  retained_args);
-        err = compile(translator, hcf_object, image_name, config, output);
+        if(enable_dead_arg_elimination && translator->getKernels().size() == 1)
+          translator->enableDeadArgumentElminiation(translator->getKernels()[0],
+                                                    retained_args);
+        err = compile(translator, hcf_object, image_name, config, refl_map,
+                      output);
+
+        if(err.is_success()) {
+          const auto& stats = translator->getCompiledKernelStats();
+          bool all_are_free_of_indirect_access =
+              std::all_of(stats.begin(), stats.end(), [](auto &S) -> bool {
+                return S.IsFreeOfIndirectAccess;
+              });
+          binary_appdb_entry.is_free_of_indirect_access =
+              all_are_free_of_indirect_access;
+        }
       });
 
   return err;
 }
 
-inline std::vector<int>
-retrieve_retained_arguments_mask(rt::kernel_configuration::id_type binary_id) {
-  return common::filesystem::persistent_storage::get().get_this_app_db().read_access(
+template <class CodeObjectT>
+void load_jit_output_metadata(CodeObjectT &exec_obj,
+                              bool has_dead_arg_elimination,
+                              rt::kernel_configuration::id_type binary_id) {
+  auto& md = exec_obj.get_jit_output_metadata();
+  
+  common::filesystem::persistent_storage::get().get_this_app_db().read_access(
       [&](const common::db::appdb_data &appdb) {
         auto it = appdb.kernels.find(binary_id);
         if(it != appdb.kernels.end()) {
-          return it->second.retained_argument_indices;
-        } else {
-          return std::vector<int>{};
+          if (has_dead_arg_elimination) {
+            md.kernel_retained_arguments_indices =
+                it->second.retained_argument_indices;
+          }
+          md.is_free_of_indirect_access = it->second.is_free_of_indirect_access;
         }
       });
 }
-}
-
 }
 }
 }

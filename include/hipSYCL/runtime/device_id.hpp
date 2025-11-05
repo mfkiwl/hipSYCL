@@ -14,6 +14,7 @@
 #include <functional>
 #include <cassert>
 #include <ostream>
+#include <cstdint>
 
 namespace hipsycl {
 namespace rt {
@@ -82,11 +83,11 @@ class device_id
 public:
   device_id() = default;
   device_id(backend_descriptor b, int id);
-  
+
   bool is_host() const;
   backend_id get_backend() const;
   backend_descriptor get_full_backend_descriptor() const;
-  
+
   int get_id() const;
 
   void dump(std::ostream& ostr) const;
@@ -100,6 +101,12 @@ public:
   friend bool operator!=(const device_id& a, const device_id& b)
   {
     return !(a == b);
+  }
+
+  uint64_t hash_code() const {
+    uint32_t backend = static_cast<uint32_t>(_backend.id);
+    uint32_t id = _device_id;
+    return (static_cast<uint64_t>(backend) << 32) | id;
   }
 private:
   backend_descriptor _backend;

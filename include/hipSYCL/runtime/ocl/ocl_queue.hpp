@@ -19,6 +19,7 @@
 
 #include "hipSYCL/common/spin_lock.hpp"
 #include "hipSYCL/glue/llvm-sscp/jit.hpp"
+#include "hipSYCL/glue/llvm-sscp/jit-reflection/reflection_map.hpp"
 #include "hipSYCL/runtime/event.hpp"
 #include "hipSYCL/runtime/generic/async_worker.hpp"
 #include "hipSYCL/runtime/ocl/ocl_code_object.hpp"
@@ -31,7 +32,7 @@ class ocl_hardware_manager;
 class ocl_queue : public inorder_queue
 {
 public:
-  ocl_queue(ocl_hardware_manager* hw_manager, std::size_t device_index);
+  ocl_queue(ocl_hardware_manager* hw_manager, std::size_t device_index, int priority = 0);
   
   ocl_queue(const ocl_queue&) = delete;
   ocl_queue& operator=(const ocl_queue&) = delete;
@@ -63,12 +64,11 @@ public:
   ocl_hardware_manager* get_hardware_manager() const;
 
   result submit_sscp_kernel_from_code_object(
-      const kernel_operation &op, hcf_object_id hcf_object,
-      const std::string_view kernel_name,
+      hcf_object_id hcf_object, const std::string_view kernel_name,
       const rt::hcf_kernel_info *kernel_info, const rt::range<3> &num_groups,
       const rt::range<3> &group_size, unsigned local_mem_size, void **args,
       std::size_t *arg_sizes, std::size_t num_args,
-      const kernel_configuration &config);
+      const kernel_configuration &config) override;
 
 private:
   void register_submitted_op(cl::Event);
@@ -107,6 +107,7 @@ private:
   common::spin_lock _sscp_submission_spin_lock;
   glue::jit::cxx_argument_mapper _arg_mapper;
   kernel_configuration _config;
+  glue::jit::reflection_map _reflection_map;
 };
 
 }

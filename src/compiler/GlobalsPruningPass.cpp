@@ -1,5 +1,11 @@
 #include "hipSYCL/compiler/GlobalsPruningPass.hpp"
 
+#include "hipSYCL/common/debug.hpp"
+#include "hipSYCL/compiler/CompilationState.hpp"
+
+#include "llvm/IR/GlobalVariable.h"
+#include "llvm/IR/Module.h"
+
 namespace {
 bool canGlobalVariableBeRemoved(llvm::GlobalVariable *G) {
   G->removeDeadConstantUsers();
@@ -42,7 +48,7 @@ bool hipsycl::compiler::GlobalsPruningPassLegacy::runOnModule(llvm::Module &M) {
   return true;
 }
 
-#if !defined(_WIN32)
+#if !defined(_WIN32) || defined(ACPP_LLVM_COMPONENT)
 llvm::PreservedAnalyses
 hipsycl::compiler::GlobalsPruningPass::run(llvm::Module &M,
                                            llvm::ModuleAnalysisManager &AM) {

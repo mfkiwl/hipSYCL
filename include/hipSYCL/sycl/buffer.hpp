@@ -20,6 +20,7 @@
 #include <type_traits>
 #include <algorithm>
 #include <utility>
+#include <atomic>
 
 #include "hipSYCL/common/debug.hpp"
 #include "hipSYCL/runtime/allocator.hpp"
@@ -91,8 +92,8 @@ public:
 class use_mutex : public detail::buffer_property
 {
 public:
-  use_mutex(mutex_class& ref);
-  mutex_class* get_mutex_ptr() const;
+  use_mutex(std::mutex& ref);
+  std::mutex* get_mutex_ptr() const;
 };
 
 class context_bound : public detail::buffer_property
@@ -190,6 +191,21 @@ struct buffer_impl
   bool destructor_waits;
   bool use_external_storage;
 
+  buffer_impl() {
+    static std::atomic<bool> was_warning_emitted = false;
+    if(!was_warning_emitted) {
+      HIPSYCL_DEBUG_WARNING << "This application uses SYCL buffers; the SYCL "
+	      "buffer-accessor model is well-known to introduce unnecessary "
+	      "overheads. Please consider migrating to the SYCL2020 USM model, "
+	      "in particular device USM (sycl::malloc_device) combined with "
+	      "in-order queues for more performance. See the AdaptiveCpp "
+	      "performance guide for more information: \n"
+	      "https://github.com/AdaptiveCpp/AdaptiveCpp/blob/develop/doc/performance.md"
+	<< std::endl;
+      was_warning_emitted = true;
+    }
+  }
+
   ~buffer_impl() {
     if (writes_back) {
       if (!writeback_ptr) {
@@ -243,7 +259,7 @@ struct buffer_impl
                   "but not marked as submitted, performing emergency DAG flush."
                 << std::endl;
 
-            requires_runtime.get()->dag().flush_sync();
+            requires_runtime.get()->dag().flush_and_gc();
           }
           assert(user_ptr->is_submitted());
           user_ptr->wait();
@@ -579,6 +595,22 @@ public:
   : buffer(hostData, bufferRange, AllocatorT(), propList)
   {}
 
+#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 170000
+  // libc++ prior 17 has messed up implicit conversion between unique and shared ptrs.
+  template <class D>
+  buffer(std::unique_ptr<T, D> &&hostData,
+         const range<dimensions> &bufferRange,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T>(std::move(hostData)), bufferRange, AllocatorT(), propList)
+  {}
+  template <class D>
+  buffer(std::unique_ptr<T, D> &&hostData,
+         const range<dimensions> &bufferRange, AllocatorT allocator,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T>(std::move(hostData)), bufferRange, allocator, propList)
+  {}
+#endif
+
   buffer(const std::shared_ptr<T[]> &hostData,
          const range<dimensions> &bufferRange, AllocatorT allocator,
          const property_list &propList = {})
@@ -615,6 +647,23 @@ public:
          const property_list &propList = {})
   : buffer(hostData, bufferRange, AllocatorT(), propList)
   {}
+
+
+#if defined(_LIBCPP_VERSION) && _LIBCPP_VERSION < 170000
+  // libc++ prior 17 has messed up implicit conversion between unique and shared ptrs.
+  template <class D>
+  buffer(std::unique_ptr<T[], D> &&hostData,
+         const range<dimensions> &bufferRange,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T[]>(std::move(hostData)), bufferRange, AllocatorT(), propList)
+  {}
+  template <class D>
+  buffer(std::unique_ptr<T[], D> &&hostData,
+         const range<dimensions> &bufferRange, AllocatorT allocator,
+         const property_list &propList = {})
+  : buffer(std::shared_ptr<T[]>(std::move(hostData)), bufferRange, allocator, propList)
+  {}
+#endif
 
   template <class InputIterator,
             int D = dimensions,
@@ -1194,17 +1243,18 @@ private:
     if(!_impl->data->has_allocation(host_device)){
       if(this->has_property<property::buffer::use_optimized_host_memory>()){
         // TODO: Actually may need to use non-host backend here...
-        host_ptr =
-            rt->backends().get(host_device.get_backend())
-                ->get_allocator(host_device)
-                ->allocate_optimized_host(
-                    alignof(T), _impl->data->get_num_elements().size() * sizeof(T));
+        auto* allocator = rt->backends().get(host_device.get_backend())
+                ->get_allocator(host_device);
+        host_ptr = rt::allocate_host(allocator, alignof(T),
+                                     _impl->data->get_num_elements().size() *
+                                         sizeof(T));
       } else {
-        host_ptr =
-            rt->backends().get(host_device.get_backend())
-                ->get_allocator(host_device)
-                ->allocate(
-                    alignof(T), _impl->data->get_num_elements().size() * sizeof(T));
+        auto *allocator = rt->backends()
+                              .get(host_device.get_backend())
+                              ->get_allocator(host_device);
+        host_ptr = rt::allocate_device(allocator, alignof(T),
+                                       _impl->data->get_num_elements().size() *
+                                           sizeof(T));
       }
 
       if(!host_ptr)

@@ -21,6 +21,7 @@
 #include "hipSYCL/runtime/instrumentation.hpp"
 #include "hipSYCL/runtime/kernel_launcher.hpp"
 #include "hipSYCL/runtime/omp/omp_event.hpp"
+#include "hipSYCL/runtime/omp/omp_backend.hpp"
 #include "hipSYCL/runtime/operations.hpp"
 #include "hipSYCL/runtime/queue_completion_event.hpp"
 #include "hipSYCL/runtime/signal_channel.hpp"
@@ -32,6 +33,12 @@
 #include "hipSYCL/glue/llvm-sscp/jit.hpp"
 #include "hipSYCL/runtime/adaptivity_engine.hpp"
 #include "hipSYCL/runtime/omp/omp_code_object.hpp"
+
+#ifndef WIN32 // MSVC might not have #warning?
+#ifndef _OPENMP
+#warning Building omp backend with JIT support, but OpenMP parallelization is not available - kernels will run sequentially! This points to an issue in the build system.
+#endif
+#endif
 
 #ifndef WIN32
 #include <unistd.h>
@@ -185,14 +192,51 @@ std::size_t get_page_size() {
 #endif
 }
 
+void *resize_and_align(std::vector<char> &data, std::size_t size,
+                       std::size_t alignment) {
+  data.resize(size + alignment);
+  return reinterpret_cast<void*>(
+        next_multiple_of(reinterpret_cast<std::uint64_t>(data.data()),
+                         alignment));
+}
+
+void *resize_and_strongly_align(std::vector<char> &data, std::size_t size) {
+  // compiler/libkernel builtins assume alignment of at least
+  // 512 byte boundaries
+  std::size_t alignment = std::max(std::size_t{512}, get_page_size());
+  return resize_and_align(data, size, alignment);
+}
+
 result
 launch_kernel_from_so(omp_sscp_executable_object::omp_sscp_kernel *kernel,
                       const rt::range<3> &num_groups,
                       const rt::range<3> &local_size, unsigned shared_memory,
                       void **kernel_args) {
+  // *** Do NOT change these values without changing also on the compiler side
+  //     in host/StaticLocalMemoryPass.cpp ***
+  // for internal use in group algorithms
+  constexpr std::size_t internal_local_memory = 1024 * sizeof(uint64_t);
+  // for local memory global variables
+  constexpr std::size_t static_local_mem_size = 1024 * 64 * sizeof(uint64_t);
+  std::size_t total_internal_local_mem_size =
+      internal_local_memory + static_local_mem_size;
+
   if (num_groups.size() == 1 && shared_memory == 0) {
+    // still need to be able to support group algorithms
+    // make thread-local in case we have multiple threads submitting.
+    //
+    // Note: This data array is also utilized to implement
+    // static local memory (i.e. globals in address space 3 of fixed size).
+    // At offset 0, internal memory is used for group algorithms,
+    // starting at offset 1024*sizeof(uint64_t) it is
+    // used for such static local memory.    
+    static thread_local std::vector<char> internal_local_memory;
+    auto aligned_internal_local_memory = resize_and_strongly_align(
+        internal_local_memory, total_internal_local_mem_size);
+
     omp_sscp_executable_object::work_group_info info{
-        num_groups, rt::id<3>{0, 0, 0}, local_size, nullptr};
+        num_groups, rt::id<3>{0, 0, 0}, local_size, nullptr,
+        aligned_internal_local_memory};
     kernel(&info, kernel_args);
     return make_success();
   }
@@ -209,11 +253,11 @@ launch_kernel_from_so(omp_sscp_executable_object::omp_sscp_kernel *kernel,
   {
     // get page aligned local memory from heap
     static thread_local std::vector<char> local_memory;
-
-    const auto page_size = get_page_size();
-    local_memory.resize(shared_memory + page_size);
-    auto aligned_local_memory = reinterpret_cast<void*>(next_multiple_of(reinterpret_cast<std::uint64_t>(local_memory.data()), page_size));
-
+    static thread_local std::vector<char> internal_local_memory;
+    auto aligned_local_memory =
+        resize_and_strongly_align(local_memory, shared_memory);
+    auto aligned_internal_local_memory = resize_and_strongly_align(
+        internal_local_memory, total_internal_local_mem_size);
 #ifdef _OPENMP
 #pragma omp for collapse(3)
 #endif
@@ -221,7 +265,8 @@ launch_kernel_from_so(omp_sscp_executable_object::omp_sscp_kernel *kernel,
       for (std::size_t j = 0; j < num_groups.get(1); ++j) {
         for (std::size_t i = 0; i < num_groups.get(0); ++i) {
           omp_sscp_executable_object::work_group_info info{
-              num_groups, rt::id<3>{i, j, k}, local_size, aligned_local_memory};
+              num_groups, rt::id<3>{i, j, k}, local_size, aligned_local_memory,
+              aligned_internal_local_memory};
           kernel(&info, kernel_args);
         }
       }
@@ -232,9 +277,12 @@ launch_kernel_from_so(omp_sscp_executable_object::omp_sscp_kernel *kernel,
 #endif
 } // namespace
 
-omp_queue::omp_queue(backend_id id)
-    : _backend_id(id), _sscp_code_object_invoker{this},
-      _kernel_cache{kernel_cache::get()} {}
+omp_queue::omp_queue(omp_backend* be, int dev)
+    : _backend_id{be->get_unique_backend_id()}, _sscp_code_object_invoker{this},
+      _kernel_cache{kernel_cache::get()} {
+  _reflection_map = glue::jit::construct_default_reflection_map(
+      be->get_hardware_manager()->get_device(dev));
+}
 
 omp_queue::~omp_queue() { _worker.halt(); }
 
@@ -259,96 +307,94 @@ result omp_queue::submit_memcpy(memcpy_operation &op, const dag_node_ptr& node) 
   HIPSYCL_DEBUG_INFO << "omp_queue: Submitting memcpy operation..."
                      << std::endl;
 
-  if (op.source().get_device().is_host() && op.dest().get_device().is_host()) {
-
-    void *base_src = op.source().get_base_ptr();
-    void *base_dest = op.dest().get_base_ptr();
-
-    assert(base_src);
-    assert(base_dest);
-
-    range<3> transferred_range = op.get_num_transferred_elements();
-    range<3> src_allocation_shape = op.source().get_allocation_shape();
-    range<3> dest_allocation_shape = op.dest().get_allocation_shape();
-    id<3> src_offset = op.source().get_access_offset();
-    id<3> dest_offset = op.dest().get_access_offset();
-    std::size_t src_element_size = op.source().get_element_size();
-    std::size_t dest_element_size = op.dest().get_element_size();
-
-    std::size_t total_num_bytes = op.get_num_transferred_bytes();
-
-    bool is_src_contiguous =
-        is_contigous(src_offset, transferred_range, src_allocation_shape);
-    bool is_dest_contiguous =
-        is_contigous(dest_offset, transferred_range, dest_allocation_shape);
-
-    omp_instrumentation_setup instrumentation_setup{op, node};
-
-    _worker([=]() {
-      auto instrumentation_guard = instrumentation_setup.instrument_task();
-
-      auto linear_index = [](id<3> id, range<3> allocation_shape) {
-        return id[2] + allocation_shape[2] * id[1] +
-               allocation_shape[2] * allocation_shape[1] * id[0];
-      };
-
-      if (is_src_contiguous && is_dest_contiguous) {
-        char *current_src = reinterpret_cast<char *>(base_src);
-        char *current_dest = reinterpret_cast<char *>(base_dest);
-
-        current_src +=
-            linear_index(src_offset, src_allocation_shape) * src_element_size;
-        current_dest += linear_index(dest_offset, dest_allocation_shape) *
-                        dest_element_size;
-
-        memcpy(current_dest, current_src, total_num_bytes);
-      } else {
-        id<3> current_src_offset = src_offset;
-        id<3> current_dest_offset = dest_offset;
-        std::size_t row_size = transferred_range[2] * src_element_size;
-
-        for (std::size_t surface = 0; surface < transferred_range[0];
-             ++surface) {
-          for (std::size_t row = 0; row < transferred_range[1]; ++row) {
-
-            char *current_src = reinterpret_cast<char *>(base_src);
-            char *current_dest = reinterpret_cast<char *>(base_dest);
-
-            current_src +=
-                linear_index(current_src_offset, src_allocation_shape) *
-                src_element_size;
-
-            current_dest +=
-                linear_index(current_dest_offset, dest_allocation_shape) *
-                dest_element_size;
-
-            assert(current_src + row_size <=
-                   reinterpret_cast<char *>(base_src) +
-                       src_allocation_shape.size() * src_element_size);
-            assert(current_dest + row_size <=
-                   reinterpret_cast<char *>(base_dest) +
-                       dest_allocation_shape.size() * dest_element_size);
-
-            memcpy(current_dest, current_src, row_size);
-
-            ++current_src_offset[1];
-            ++current_dest_offset[1];
-          }
-          current_src_offset[1] = src_offset[1];
-          current_dest_offset[1] = dest_offset[1];
-
-          ++current_dest_offset[0];
-          ++current_src_offset[0];
-        }
-      }
-    });
-  } else {
+  if (!op.source().get_device().is_host() || !op.dest().get_device().is_host()) {
     return register_error(
         __acpp_here(),
         error_info{"omp_queue: OpenMP CPU backend cannot transfer data between "
                    "host and accelerators.",
                    error_type::feature_not_supported});
   }
+
+  void *base_src = op.source().get_base_ptr();
+  void *base_dest = op.dest().get_base_ptr();
+
+  assert(base_src);
+  assert(base_dest);
+
+  range<3> transferred_range = op.get_num_transferred_elements();
+  range<3> src_allocation_shape = op.source().get_allocation_shape();
+  range<3> dest_allocation_shape = op.dest().get_allocation_shape();
+  id<3> src_offset = op.source().get_access_offset();
+  id<3> dest_offset = op.dest().get_access_offset();
+  std::size_t src_element_size = op.source().get_element_size();
+  std::size_t dest_element_size = op.dest().get_element_size();
+
+  std::size_t total_num_bytes = op.get_num_transferred_bytes();
+
+  bool is_src_contiguous =
+      is_contigous(src_offset, transferred_range, src_allocation_shape);
+  bool is_dest_contiguous =
+      is_contigous(dest_offset, transferred_range, dest_allocation_shape);
+
+  omp_instrumentation_setup instrumentation_setup{op, node};
+
+  _worker([=]() {
+    auto instrumentation_guard = instrumentation_setup.instrument_task();
+
+    auto linear_index = [](id<3> id, range<3> allocation_shape) {
+      return id[2] + allocation_shape[2] * id[1] +
+             allocation_shape[2] * allocation_shape[1] * id[0];
+    };
+
+    if (is_src_contiguous && is_dest_contiguous) {
+      char *current_src = reinterpret_cast<char *>(base_src);
+      char *current_dest = reinterpret_cast<char *>(base_dest);
+
+      current_src +=
+          linear_index(src_offset, src_allocation_shape) * src_element_size;
+      current_dest +=
+          linear_index(dest_offset, dest_allocation_shape) * dest_element_size;
+
+      memcpy(current_dest, current_src, total_num_bytes);
+    } else {
+      id<3> current_src_offset = src_offset;
+      id<3> current_dest_offset = dest_offset;
+      std::size_t row_size = transferred_range[2] * src_element_size;
+
+      for (std::size_t surface = 0; surface < transferred_range[0]; ++surface) {
+        for (std::size_t row = 0; row < transferred_range[1]; ++row) {
+
+          char *current_src = reinterpret_cast<char *>(base_src);
+          char *current_dest = reinterpret_cast<char *>(base_dest);
+
+          current_src +=
+              linear_index(current_src_offset, src_allocation_shape) *
+              src_element_size;
+
+          current_dest +=
+              linear_index(current_dest_offset, dest_allocation_shape) *
+              dest_element_size;
+
+          assert(current_src + row_size <=
+                 reinterpret_cast<char *>(base_src) +
+                     src_allocation_shape.size() * src_element_size);
+          assert(current_dest + row_size <=
+                 reinterpret_cast<char *>(base_dest) +
+                     dest_allocation_shape.size() * dest_element_size);
+
+          memcpy(current_dest, current_src, row_size);
+
+          ++current_src_offset[1];
+          ++current_dest_offset[1];
+        }
+        current_src_offset[1] = src_offset[1];
+        current_dest_offset[1] = dest_offset[1];
+
+        ++current_dest_offset[0];
+        ++current_src_offset[0];
+      }
+    }
+  });
 
   return make_success();
 }
@@ -361,13 +407,13 @@ result omp_queue::submit_kernel(kernel_operation &op, const dag_node_ptr& node) 
 
   const kernel_configuration *config =
       &(op.get_launcher().get_kernel_configuration());
-  
+
   auto backend_id = _backend_id;
   void* params = this;
-  rt::dag_node* node_ptr = node.get();
 
   omp_instrumentation_setup instrumentation_setup{op, node};
   _worker([=, &op]() {
+    rt::dag_node* node_ptr = node.get();
     auto instrumentation_guard = instrumentation_setup.instrument_task();
 
     auto err = op.get_launcher().invoke(backend_id, params, cap, node_ptr);
@@ -379,11 +425,11 @@ result omp_queue::submit_kernel(kernel_operation &op, const dag_node_ptr& node) 
 }
 
 result omp_queue::submit_sscp_kernel_from_code_object(
-    const kernel_operation &op, hcf_object_id hcf_object,
-    std::string_view kernel_name, const rt::hcf_kernel_info *kernel_info,
-    const rt::range<3> &num_groups, const rt::range<3> &group_size,
-    unsigned local_mem_size, void **args, std::size_t *arg_sizes,
-    std::size_t num_args, const kernel_configuration &initial_config) {
+    hcf_object_id hcf_object, std::string_view kernel_name,
+    const rt::hcf_kernel_info *kernel_info, const rt::range<3> &num_groups,
+    const rt::range<3> &group_size, unsigned local_mem_size, void **args,
+    std::size_t *arg_sizes, std::size_t num_args,
+    const kernel_configuration &initial_config) {
 #ifdef HIPSYCL_WITH_SSCP_COMPILER
   common::spin_lock_guard lock{_sscp_submission_spin_lock};
 
@@ -409,7 +455,7 @@ result omp_queue::submit_sscp_kernel_from_code_object(
       group_size, args,        arg_sizes,   num_args, local_mem_size};
 
   _config = initial_config;
-  
+
   _config.append_base_configuration(
       kernel_base_config_parameter::backend_id, backend_id::omp);
   _config.append_base_configuration(
@@ -417,6 +463,11 @@ result omp_queue::submit_sscp_kernel_from_code_object(
       compilation_flow::sscp);
   _config.append_base_configuration(
       kernel_base_config_parameter::hcf_object_id, hcf_object);
+
+  for(const auto& flag : kernel_info->get_compilation_flags())
+    _config.set_build_flag(flag);
+  for(const auto& opt : kernel_info->get_compilation_options())
+    _config.set_build_option(opt.first, opt.second);
 
   auto binary_configuration_id =
       adaptivity_engine.finalize_binary_configuration(_config);
@@ -438,8 +489,10 @@ result omp_queue::submit_sscp_kernel_from_code_object(
         compiler::createLLVMToHostTranslator(kernel_names);
 
     // Lower kernels to binary
-    auto err = glue::jit::compile(translator.get(), hcf, selected_image_name,
-                                  _config, compiled_image);
+    rt::result err = glue::jit::compile_and_store_stats(
+        translator.get(), hcf_object, selected_image_name, _config,
+        binary_configuration_id, _reflection_map, compiled_image,
+        false);
 
     if (!err.is_success()) {
       register_error(err);
@@ -467,6 +520,9 @@ result omp_queue::submit_sscp_kernel_from_code_object(
         << "omp_queue: Successfully compiled SSCP kernels to module "
         << exec_obj->get_module() << std::endl;
 
+    glue::jit::load_jit_output_metadata(*exec_obj, false,
+                                        binary_configuration_id);
+
     return exec_obj;
   };
 
@@ -483,8 +539,10 @@ result omp_queue::submit_sscp_kernel_from_code_object(
       static_cast<const omp_sscp_executable_object *>(obj)->get_kernel(
           kernel_name);
 
-  return launch_kernel_from_so(kernel, num_groups, group_size, local_mem_size,
-                               _arg_mapper.get_mapped_args());
+  auto err = launch_kernel_from_so(kernel, num_groups, group_size, local_mem_size,
+                                   _arg_mapper.get_mapped_args());
+  on_kernel_launch_complete(kernel_name, obj);
+  return err;
 
 #else
   return make_error(
@@ -594,7 +652,7 @@ result omp_sscp_code_object_invoker::submit_kernel(
     const kernel_configuration &config) {
 
   return _queue->submit_sscp_kernel_from_code_object(
-      op, hcf_object, kernel_name, kernel_info, num_groups, group_size,
+      hcf_object, kernel_name, kernel_info, num_groups, group_size,
       local_mem_size, args, arg_sizes, num_args, config);
 }
 

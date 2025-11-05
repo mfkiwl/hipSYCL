@@ -16,8 +16,6 @@
 
 #ifdef HIPSYCL_ENABLE_GROUP_ALGORITHM_TESTS
 
-using namespace cl;
-
 BOOST_FIXTURE_TEST_SUITE(group_functions_tests, reset_device_fixture)
 
 BOOST_AUTO_TEST_CASE(group_x_of_local) {
@@ -35,9 +33,9 @@ BOOST_AUTO_TEST_CASE(group_x_of_local) {
       acc[global_linear_id] = sycl::any_of_group(g, static_cast<bool>(local_value));
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
-      detail::check_binary_reduce<T, __LINE__>(vIn, local_size, global_size,
+      detail::check_binary_reduce<T, __LINE__>(vIn,vOrig, local_size, global_size,
                                                std::vector<bool>{true, false, true, true},
                                                "any_of");
     };
@@ -55,10 +53,10 @@ BOOST_AUTO_TEST_CASE(group_x_of_local) {
       acc[global_linear_id] = sycl::all_of_group(g, static_cast<bool>(local_value));
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
       detail::check_binary_reduce<T, __LINE__>(
-          vIn, local_size, global_size, std::vector<bool>{false, false, false, true},
+          vIn, vOrig, local_size, global_size, std::vector<bool>{false, false, false, true},
           "all_of");
     };
 
@@ -75,10 +73,10 @@ BOOST_AUTO_TEST_CASE(group_x_of_local) {
       acc[global_linear_id] = sycl::none_of_group(g, static_cast<bool>(local_value));
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
       detail::check_binary_reduce<T, __LINE__>(
-          vIn, local_size, global_size, std::vector<bool>{false, true, false, false},
+          vIn,vOrig, local_size, global_size, std::vector<bool>{false, true, false, false},
           "none_of");
     };
 
@@ -95,7 +93,6 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_local) {
     using T = char;
 
     const size_t   elements_per_thread = 1;
-    const uint32_t subgroup_size = detail::get_subgroup_size(sycl::queue{});
 
     const auto data_generator = [](std::vector<T> &v, size_t local_size,
                                   size_t global_size) {
@@ -108,9 +105,9 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_local) {
         acc[global_linear_id] = sycl::any_of_group(sg, static_cast<bool>(local_value));
       };
       const auto validation_function = [=](const std::vector<T> &vIn,
-                                          const std::vector<T> &vOrig, size_t local_size,
+                                          const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                           size_t global_size) {
-        detail::check_binary_reduce<T, __LINE__>(vIn, local_size, global_size,
+        detail::check_binary_reduce<T, __LINE__>(vIn,vOrig, local_size, global_size,
                                                 std::vector<bool>{true, false, true, true},
                                                 "any_of", subgroup_size);
       };
@@ -125,11 +122,11 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_local) {
         acc[global_linear_id] = sycl::all_of_group(sg, static_cast<bool>(local_value));
       };
       const auto validation_function = [=](const std::vector<T> &vIn,
-                                          const std::vector<T> &vOrig, size_t local_size,
+                                          const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                           size_t global_size) {
         detail::check_binary_reduce<T, __LINE__>(
-            vIn, local_size, global_size, std::vector<bool>{false, false, false, true},
-            "all_of", subgroup_size);
+            vIn,vOrig, local_size, global_size, std::vector<bool>{false, false, false, true},
+            "all_of bool sub group", subgroup_size);
       };
 
       test_nd_group_function_1d<__LINE__, T>(elements_per_thread, data_generator,
@@ -142,10 +139,10 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_local) {
         acc[global_linear_id] = sycl::none_of_group(sg, static_cast<bool>(local_value));
       };
       const auto validation_function = [=](const std::vector<T> &vIn,
-                                          const std::vector<T> &vOrig, size_t local_size,
+                                          const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                           size_t global_size) {
         detail::check_binary_reduce<T, __LINE__>(
-            vIn, local_size, global_size, std::vector<bool>{false, true, false, false},
+            vIn,vOrig, local_size, global_size, std::vector<bool>{false, true, false, false},
             "none_of", subgroup_size);
       };
 
@@ -177,9 +174,9 @@ BOOST_AUTO_TEST_CASE(group_x_of_ptr_function) {
       acc[global_linear_id + 2 * global_size] = local;
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
-      detail::check_binary_reduce<T, __LINE__>(vIn, local_size, global_size,
+      detail::check_binary_reduce<T, __LINE__>(vIn,vOrig, local_size, global_size,
                                                std::vector<bool>{true, true, true, false},
                                                "any_of", 0, 2 * global_size);
     };
@@ -204,10 +201,10 @@ BOOST_AUTO_TEST_CASE(group_x_of_ptr_function) {
       acc[global_linear_id + 2 * global_size] = local;
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
       detail::check_binary_reduce<T, __LINE__>(
-          vIn, local_size, global_size, std::vector<bool>{false, true, false, false},
+          vIn,vOrig, local_size, global_size, std::vector<bool>{false, true, false, false},
           "all_of", 0, 2 * global_size);
     };
 
@@ -232,10 +229,10 @@ BOOST_AUTO_TEST_CASE(group_x_of_ptr_function) {
       acc[global_linear_id + 2 * global_size] = local;
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
       detail::check_binary_reduce<T, __LINE__>(
-          vIn, local_size, global_size, std::vector<bool>{false, false, false, true},
+          vIn,vOrig, local_size, global_size, std::vector<bool>{false, false, false, true},
           "none_of", 0, 2 * global_size);
     };
 
@@ -263,9 +260,9 @@ BOOST_AUTO_TEST_CASE(group_x_of_function) {
           sycl::any_of_group(g, static_cast<bool>(local_value), std::logical_not<T>());
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
-      detail::check_binary_reduce<T, __LINE__>(vIn, local_size, global_size,
+      detail::check_binary_reduce<T, __LINE__>(vIn,vOrig, local_size, global_size,
                                                std::vector<bool>{true, true, true, false},
                                                "any_of");
     };
@@ -284,10 +281,10 @@ BOOST_AUTO_TEST_CASE(group_x_of_function) {
           sycl::all_of_group(g, static_cast<bool>(local_value), std::logical_not<T>());
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
       detail::check_binary_reduce<T, __LINE__>(
-          vIn, local_size, global_size, std::vector<bool>{false, true, false, false},
+          vIn,vOrig, local_size, global_size, std::vector<bool>{false, true, false, false},
           "all_of");
     };
 
@@ -305,10 +302,10 @@ BOOST_AUTO_TEST_CASE(group_x_of_function) {
           sycl::none_of_group(g, static_cast<bool>(local_value), std::logical_not<T>());
     };
     const auto validation_function = [](const std::vector<T> &vIn,
-                                        const std::vector<T> &vOrig, size_t local_size,
+                                        const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                         size_t global_size) {
       detail::check_binary_reduce<T, __LINE__>(
-          vIn, local_size, global_size, std::vector<bool>{false, false, false, true},
+          vIn,vOrig, local_size, global_size, std::vector<bool>{false, false, false, true},
           "none_of");
     };
 
@@ -325,7 +322,6 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_function) {
     using T = char;
 
     const size_t   elements_per_thread = 1;
-    const uint32_t subgroup_size = detail::get_subgroup_size(sycl::queue{});
 
     const auto data_generator = [](std::vector<T> &v, size_t local_size,
                                   size_t global_size) {
@@ -339,9 +335,9 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_function) {
             sycl::any_of_group(sg, static_cast<bool>(local_value), std::logical_not<T>());
       };
       const auto validation_function = [=](const std::vector<T> &vIn,
-                                          const std::vector<T> &vOrig, size_t local_size,
+                                          const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                           size_t global_size) {
-        detail::check_binary_reduce<T, __LINE__>(vIn, local_size, global_size,
+        detail::check_binary_reduce<T, __LINE__>(vIn,vOrig, local_size, global_size,
                                                 std::vector<bool>{true, true, true, false},
                                                 "any_of", subgroup_size);
       };
@@ -357,10 +353,10 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_function) {
             sycl::all_of_group(sg, static_cast<bool>(local_value), std::logical_not<T>());
       };
       const auto validation_function = [=](const std::vector<T> &vIn,
-                                          const std::vector<T> &vOrig, size_t local_size,
+                                          const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                           size_t global_size) {
         detail::check_binary_reduce<T, __LINE__>(
-            vIn, local_size, global_size, std::vector<bool>{false, true, false, false},
+            vIn,vOrig, local_size, global_size, std::vector<bool>{false, true, false, false},
             "all_of", subgroup_size);
       };
 
@@ -375,10 +371,10 @@ BOOST_AUTO_TEST_CASE(sub_group_x_of_function) {
             sycl::none_of_group(sg, static_cast<bool>(local_value), std::logical_not<T>());
       };
       const auto validation_function = [=](const std::vector<T> &vIn,
-                                          const std::vector<T> &vOrig, size_t local_size,
+                                          const std::vector<T> &vOrig, size_t subgroup_size, size_t local_size,
                                           size_t global_size) {
         detail::check_binary_reduce<T, __LINE__>(
-            vIn, local_size, global_size, std::vector<bool>{false, false, false, true},
+            vIn,vOrig, local_size, global_size, std::vector<bool>{false, false, false, true},
             "none_of", subgroup_size);
       };
 

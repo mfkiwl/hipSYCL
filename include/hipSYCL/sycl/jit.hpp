@@ -20,6 +20,7 @@
 #if ACPP_LIBKERNEL_IS_DEVICE_PASS_SSCP
 #include "hipSYCL/glue/reflection.hpp"
 #include "hipSYCL/glue/llvm-sscp/fcall_specialization.hpp"
+#include "hipSYCL/glue/llvm-sscp/jit-reflection/queries.hpp"
 #include "hipSYCL/common/stable_running_hash.hpp"
 #include "hipSYCL/common/unordered_dense.hpp"
 #include "exception.hpp"
@@ -35,7 +36,7 @@ extern "C" void __acpp_function_annotation_dynamic_function_def_arg1();
 template<class T>
 void __acpp_function_annotation_argument_used(T&& x);
 
-namespace hipsycl::sycl::jit {
+namespace hipsycl::sycl::AdaptiveCpp_jit {
 
 template<class T>
 void arguments_are_used(T&& x) {
@@ -223,7 +224,13 @@ public:
     if(!_is_ready)
       prepare_for_submission();
 
-    glue::sscp::fcall_config_kernel_property_t prop{&_config};
+    // Avoid the the fcall specialization pointer from being
+    // taken into account as a pointer during adaptivity analysis.
+    // This can reduce unnecessary JIT e.g. if the fcall pointer
+    // changes alignment
+    auto prop = glue::sscp::hide_fcall_specialization_pointer(
+        glue::sscp::fcall_config_kernel_property_t{&_config});
+    
     return [prop, k](auto&&... args){
       k(decltype(args)(args)...);
     };
@@ -253,7 +260,7 @@ private:
       common::stable_running_hash hash;
       hash(entry.first.data(), entry.first.size());
       for(const auto& s : entry.second)
-        hash(entry.second.data(), entry.second.size());
+        hash(s.data(), s.size());
       _config.unique_hash ^= hash.get_current_hash();
     }
   }
@@ -274,7 +281,21 @@ private:
 
 }
 
+#else // IS_DEVICE_PASS_SSCP
+
+// Define at least the namespace so that users can set global aliases
+// for convenience, instead of only being able to define them inside
+// __acpp_if_target_sscp().
+namespace hipsycl::sycl::AdaptiveCpp_jit {}
 
 #endif // IS_DEVICE_PASS_SSCP
+
+// Set jit alias for convenience. If SYCL ever claims this namespace
+// we will have to remove it, so this is not currently publicly advertised.
+// However, it aligns with certain early examples that were published around
+// our JIT capabilities - if users try those, we need this bit.
+namespace hipsycl::sycl::jit {
+using namespace hipsycl::sycl::AdaptiveCpp_jit;
+}
 
 #endif

@@ -20,6 +20,7 @@
 #include <CL/opencl.hpp>
 #include <cstddef>
 #include <array>
+// #include <limits>
 #include <optional>
 
 
@@ -152,7 +153,7 @@ bool should_include_device(const std::string& dev_name, const cl::Device& dev) {
       info_query<CL_DEVICE_SVM_CAPABILITIES, cl_device_svm_capabilities>(dev);
 
   bool has_usm_extension = info_query<CL_DEVICE_EXTENSIONS, std::string>(dev).find("cl_intel_unified_shared_memory") != std::string::npos;
-  bool has_system_svm = !(cap & CL_DEVICE_SVM_FINE_GRAIN_SYSTEM);
+  bool has_system_svm = cap & CL_DEVICE_SVM_FINE_GRAIN_SYSTEM;
 
   if(!has_usm_extension && !has_system_svm) {
     HIPSYCL_DEBUG_WARNING << "ocl_hardware_manager: OpenCL device '" << dev_name
@@ -179,6 +180,8 @@ ocl_hardware_context::ocl_hardware_context(const cl::Device &dev,
 
   if(platform_name == "Intel(R) OpenCL Graphics" || platform_name == "Intel(R) OpenCL")
     _has_intel_extension_profile = true;
+  std::string extensions = info_query<CL_DEVICE_EXTENSIONS, std::string>(dev);
+  _has_cl_khr_priority_hints_extension = (extensions.find("cl_khr_priority_hints") != std::string::npos);
 }
 
 bool ocl_hardware_context::is_cpu() const {
@@ -212,6 +215,11 @@ std::string ocl_hardware_context::get_device_arch() const {
 bool ocl_hardware_context::has_intel_extension_profile() const {
   return _has_intel_extension_profile;
 }
+
+bool ocl_hardware_context::has_cl_khr_priority_hints_extension() const {
+  return _has_cl_khr_priority_hints_extension;
+}
+
 
 bool ocl_hardware_context::has(device_support_aspect aspect) const {
   switch (aspect) {
@@ -289,6 +297,21 @@ std::size_t ocl_hardware_context::get_property(device_uint_property prop) const 
   case device_uint_property::max_compute_units:
     return static_cast<std::size_t>(
         info_query<CL_DEVICE_MAX_COMPUTE_UNITS, cl_uint>(_dev));
+    break;
+  case device_uint_property::max_work_group_range0:
+    return static_cast<std::size_t>(
+        std::numeric_limits<int>::max());
+    break;
+  case device_uint_property::max_work_group_range1:
+    return static_cast<std::size_t>(
+        std::numeric_limits<int>::max());
+    break;
+  case device_uint_property::max_work_group_range2:
+    return static_cast<std::size_t>(
+        std::numeric_limits<int>::max());
+    break;
+  case device_uint_property::max_work_group_range_size:
+    return std::numeric_limits<std::size_t>::max();
     break;
   case device_uint_property::max_global_size0:
     return static_cast<std::size_t>(
@@ -469,6 +492,20 @@ std::size_t ocl_hardware_context::get_property(device_uint_property prop) const 
     return static_cast<std::size_t>(
         info_query<CL_DEVICE_VENDOR_ID, cl_uint>(_dev));
     break;
+  case device_uint_property::architecture:
+    // TODO
+    return 0;
+    break;
+  case device_uint_property::backend_id:
+    return static_cast<int>(backend_id::ocl);
+    break;
+  case device_uint_property::queue_priority_range_low:
+    // cl_khr_priority_hints extension only has "low" and "high", so we map them to 1 and -1
+    return _has_cl_khr_priority_hints_extension ? 1 : 0;
+    break;
+  case device_uint_property::queue_priority_range_high:
+    return _has_cl_khr_priority_hints_extension ? -1 : 0;
+    break;
   }
   assert(false && "Invalid device property");
   std::terminate();
@@ -561,7 +598,18 @@ void ocl_hardware_context::init_allocator(ocl_hardware_manager *mgr) {
                              "allocations are not possible on that device."
                           << std::endl;
   }
-  _alloc = ocl_allocator{_usm_provider.get()};
+  device_id dev{
+      backend_descriptor{hardware_platform::ocl, api_platform::ocl},
+      _dev_id};
+  _alloc = ocl_allocator{dev, _usm_provider.get()};
+}
+
+std::size_t ocl_hardware_context::get_platform_index() const {
+  return static_cast<std::size_t>(_platform_id);
+}
+
+std::size_t ocl_hardware_manager::get_num_platforms() const {
+  return _platforms.size();
 }
 
 ocl_hardware_manager::ocl_hardware_manager()

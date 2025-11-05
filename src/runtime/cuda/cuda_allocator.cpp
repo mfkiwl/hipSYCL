@@ -13,6 +13,7 @@
 #include "hipSYCL/runtime/cuda/cuda_allocator.hpp"
 #include "hipSYCL/runtime/cuda/cuda_device_manager.hpp"
 #include "hipSYCL/runtime/error.hpp"
+#include "hipSYCL/runtime/hints.hpp"
 
 namespace hipsycl {
 namespace rt {
@@ -21,7 +22,8 @@ cuda_allocator::cuda_allocator(backend_descriptor desc, int cuda_device)
     : _backend_descriptor{desc}, _dev{cuda_device}
 {}
       
-void *cuda_allocator::allocate(size_t min_alignment, size_t size_bytes)
+void *cuda_allocator::raw_allocate(size_t min_alignment, size_t size_bytes,
+                                   const allocation_hints &hints)
 {
   void *ptr;
   cuda_device_manager::get().activate_device(_dev);
@@ -38,8 +40,10 @@ void *cuda_allocator::allocate(size_t min_alignment, size_t size_bytes)
   return ptr;
 }
 
-void *cuda_allocator::allocate_optimized_host(size_t min_alignment,
-                                             size_t bytes) {
+void *
+cuda_allocator::raw_allocate_optimized_host(size_t min_alignment,
+                                            size_t bytes,
+                                            const allocation_hints &hints) {
   void *ptr;
   cuda_device_manager::get().activate_device(_dev);
 
@@ -55,7 +59,7 @@ void *cuda_allocator::allocate_optimized_host(size_t min_alignment,
   return ptr;
 }
 
-void cuda_allocator::free(void *mem) {
+void cuda_allocator::raw_free(void *mem) {
 
   pointer_info info;
   result query_result = query_pointer(mem, info);
@@ -79,7 +83,8 @@ void cuda_allocator::free(void *mem) {
   }
 }
 
-void * cuda_allocator::allocate_usm(size_t bytes)
+void * cuda_allocator::raw_allocate_usm(size_t bytes,
+                                        const allocation_hints &hints)
 {
   cuda_device_manager::get().activate_device(_dev);
   
@@ -142,8 +147,15 @@ result cuda_allocator::query_pointer(const void *ptr, pointer_info &out) const {
 result cuda_allocator::mem_advise(const void *addr, std::size_t num_bytes,
                             int advise) const {
 #ifndef _WIN32
+  #if CUDART_VERSION >= 13000
+  cudaMemLocation location;
+  location.id = _dev;
+  location.type = cudaMemLocationTypeDevice;
+  #else
+  int location = _dev;
+  #endif
   cudaError_t err = cudaMemAdvise(addr, num_bytes,
-                                  static_cast<cudaMemoryAdvise>(advise), _dev);
+                                  static_cast<cudaMemoryAdvise>(advise), location);
   if(err != cudaSuccess) {
     return make_error(
       __acpp_here(),
@@ -155,6 +167,10 @@ result cuda_allocator::mem_advise(const void *addr, std::size_t num_bytes,
                         << std::endl;
 #endif // _WIN32
   return make_success();
+}
+
+device_id cuda_allocator::get_device() const {
+  return device_id{_backend_descriptor, _dev};
 }
 
 }

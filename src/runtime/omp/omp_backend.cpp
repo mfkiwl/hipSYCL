@@ -11,6 +11,7 @@
 #include "hipSYCL/runtime/backend_loader.hpp"
 #include "hipSYCL/runtime/executor.hpp"
 #include "hipSYCL/runtime/omp/omp_backend.hpp"
+#include "hipSYCL/runtime/inorder_queue.hpp"
 #include "hipSYCL/runtime/omp/omp_queue.hpp"
 #include "hipSYCL/runtime/application.hpp"
 #include "hipSYCL/runtime/device_id.hpp"
@@ -38,14 +39,14 @@ namespace rt {
 
 namespace {
 
-std::unique_ptr<inorder_queue> make_omp_queue(device_id dev) {
-  return std::make_unique<omp_queue>(dev.get_backend());
+std::unique_ptr<inorder_queue> make_omp_queue(omp_backend* be, device_id dev) {
+  return std::make_unique<omp_queue>(be, dev.get_id());
 }
 
 std::unique_ptr<multi_queue_executor>
 create_multi_queue_executor(omp_backend *b) {
-  return std::make_unique<multi_queue_executor>(*b, [](device_id dev) {
-    return make_omp_queue(dev);
+  return std::make_unique<multi_queue_executor>(*b, [b](device_id dev) {
+    return make_omp_queue(b, dev);
   });
 }
 
@@ -102,7 +103,8 @@ std::string omp_backend::get_name() const {
 
 std::unique_ptr<backend_executor>
 omp_backend::create_inorder_executor(device_id dev, int priority){
-  return nullptr;
+  std::unique_ptr<inorder_queue> q = make_omp_queue(this, dev);
+  return std::make_unique<inorder_executor>(std::move(q));
 }
 
 }
