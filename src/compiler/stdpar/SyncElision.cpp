@@ -165,7 +165,7 @@ bool functionDoesNotAccessMemory(llvm::Function* F){
 // returns whether To is in the same BB as From, and succeeds it in the instruction list.
 bool isSucceedingInBB(llvm::Instruction* From, llvm::Instruction* To) {
   if(From->getParent() == To->getParent()) {
-    for(auto* I = From; I != nullptr; I = llvmutils::getNextNonDebugInstruction(I)) {
+    for(auto* I = From; I != nullptr; I = I->getNextNonDebugInstruction()) {
       if(I == To)
         return true;
     }
@@ -288,7 +288,7 @@ void forEachReachableInstructionRequiringSync(
         return;
       }
     }
-    Current = llvmutils::getNextNonDebugInstruction(Current);
+    Current = Current->getNextNonDebugInstruction();
   }
   // We have reached the end of this BB - so we need to look
   // at all its successors in the CFG
@@ -403,7 +403,7 @@ llvm::PreservedAnalyses SyncElisionPass::run(llvm::Module &M, llvm::ModuleAnalys
           StartPositions.push_back(&*(I->getSuccessor(i)->getFirstInsertionPt()));
         }
       } else {
-        StartPositions.push_back(llvmutils::getNextNonDebugInstruction(I));
+        StartPositions.push_back(I->getNextNonDebugInstruction());
       }
       for(auto* Start : StartPositions) {
 
