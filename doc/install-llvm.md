@@ -18,12 +18,12 @@ Install
 * libomp (including development headers)
 * lld
 
-For example, the required steps to install clang 16 on an Ubuntu system are:
+For example, the required steps to install clang 20 on an Ubuntu system are:
 ```
 wget https://apt.llvm.org/llvm.sh #Convenience script that sets up the repositories
 chmod +x llvm.sh
-./llvm.sh 16 #Set up repositories for clang 16
-apt install -y libclang-16-dev clang-tools-16 libomp-16-dev llvm-16-dev lld-16
+./llvm.sh 20 #Set up repositories for clang 20
+apt install -y libclang-20-dev clang-tools-20 libomp-20-dev llvm-20-dev lld-20
 ```
 
 #### Only if you wish to compile LLVM from source (not recommended)
@@ -79,9 +79,9 @@ If AdaptiveCpp does not automatically configure the build for the desired clang/
 Verify from the cmake that the selected `clang++` and include headers match the LLVM that you have requested. Example output:
 ```
 ...
--- Building AdaptiveCpp against LLVM configured from /usr/lib/llvm-16/cmake/
--- Selecting clang: /usr/bin/clang++-16
--- Using clang include directory: /usr/include/clang/16.0.1/include/..
+-- Building AdaptiveCpp against LLVM configured from /usr/lib/llvm-20/cmake
+-- Selecting clang: /usr/lib/llvm-20/bin/clang++
+-- Using clang include directory: /usr/lib/llvm-20/lib/clang/20/include/..
 ...
 ```
 
