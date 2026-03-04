@@ -22,6 +22,7 @@ namespace llvm {
 class Module;
 class Function;
 class Value;
+class Constant;
 class BasicBlock;
 class Type;
 } // namespace llvm
@@ -56,6 +57,8 @@ private:
   bool emitFunction(llvm::Function& F, const hl::Node& node);
   void emitTypes();
   void emitIntrinsicHelpers();
+  void emitGlobalConstants();
+  std::string emitConstantInitializer(const llvm::Constant* C);
   bool emitArgStruct(llvm::Function& F);
   bool emitSignature(llvm::Function& F);
   bool emitDeclarations();
@@ -64,6 +67,7 @@ private:
   bool emitInstruction(const llvm::Instruction& I, int level);
   void emitUnaryOperator(const llvm::UnaryOperator* UO, const std::string& name, int level);
   void emitBinaryOperator(const llvm::BinaryOperator* BO, const std::string& name, int level);
+  bool emitCastInstruction(const llvm::CastInst* CI, const std::string& name, int level);
   void emitICmpInstruction(const llvm::ICmpInst* IC, const std::string& name, int level);
   void emitFCmpInstruction(const llvm::FCmpInst* FC, const std::string& name, int level);
   void emitGEPInstruction(const llvm::GetElementPtrInst* GEP, const std::string& name, int level);
